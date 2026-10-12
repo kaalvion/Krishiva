@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { firestore } from '../../plugins/firebase.js';
 import { logger } from '../../utils/logger.js';
+import { checkAlerts } from '../alerts/alerts.service.js';
 
 export const telemetryPayloadSchema = z.object({
   nodeId: z.coerce
@@ -8,12 +9,26 @@ export const telemetryPayloadSchema = z.object({
     .int('nodeId must be an integer')
     .min(1, 'nodeId must be between 1 and 4')
     .max(4, 'nodeId must be between 1 and 4'),
-  temperature: z.number({ required_error: 'temperature is required' }),
-  humidity: z.number({ required_error: 'humidity is required' }),
-  soilMoisture: z.number({ required_error: 'soilMoisture is required' }),
-  recordedAt: z.union([z.string(), z.number()], {
-    required_error: 'recordedAt must be an ISO string or epoch timestamp',
-  }),
+  temperature: z
+    .number({ required_error: 'temperature is required' })
+    .min(-50, 'temperature must be between -50 and 80')
+    .max(80, 'temperature must be between -50 and 80'),
+  humidity: z
+    .number({ required_error: 'humidity is required' })
+    .min(0, 'humidity must be between 0 and 100')
+    .max(100, 'humidity must be between 0 and 100'),
+  soilMoisture: z
+    .number({ required_error: 'soilMoisture is required' })
+    .min(0, 'soilMoisture must be between 0 and 100')
+    .max(100, 'soilMoisture must be between 0 and 100'),
+  recordedAt: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'recordedAt must be a valid ISO datetime string',
+    })
+    .optional()
+    .default(() => new Date().toISOString()),
+  seq: z.coerce.number().int().optional(),
 });
 
 export type TelemetryPayload = z.infer<typeof telemetryPayloadSchema>;
@@ -56,21 +71,65 @@ export async function handleTelemetryMessage(
   const telemetryData = parseResult.data;
   const now = new Date().toISOString();
 
-  try {
-    const docPath = `farms/${farmId}/devices/${deviceId}/latest/current`;
-    const docRef = firestore().doc(docPath);
+  // Compute UTC daily bucket collection name: readings_YYYY_MM_DD
+  const recDate = new Date(telemetryData.recordedAt);
+  const yyyy = recDate.getUTCFullYear();
+  const mm = String(recDate.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(recDate.getUTCDate()).padStart(2, '0');
+  const bucketName = `readings_${yyyy}_${mm}_${dd}`;
+  const bucketCollectionPath = `farms/${farmId}/devices/${deviceId}/${bucketName}`;
 
-    // 1. Update latest reading document
-    await docRef.set(
+  const readingRecord = {
+    nodeId: telemetryData.nodeId,
+    temperature: telemetryData.temperature,
+    humidity: telemetryData.humidity,
+    soilMoisture: telemetryData.soilMoisture,
+    recordedAt: telemetryData.recordedAt,
+    receivedAt: now,
+    ...(telemetryData.seq !== undefined ? { seq: telemetryData.seq } : {}),
+  };
+
+  try {
+    const bucketRef = firestore().collection(bucketCollectionPath);
+
+    // 1. Write to daily bucket with deduplication when seq is provided
+    if (telemetryData.seq !== undefined && telemetryData.seq !== null) {
+      const docId = `seq_${telemetryData.seq}`;
+      const docRef = bucketRef.doc(docId);
+      try {
+        await docRef.create(readingRecord);
+      } catch (err: any) {
+        // If document already exists (code 6), skip duplicate reading
+        if (
+          err?.code === 6 ||
+          err?.message?.includes('ALREADY_EXISTS') ||
+          err?.details?.includes('Already exists')
+        ) {
+          logger.info(
+            { seq: telemetryData.seq, deviceId, farmId, bucketName },
+            `Duplicate reading seq_${telemetryData.seq} skipped`
+          );
+          return;
+        }
+        throw err;
+      }
+    } else {
+      const docRef = bucketRef.doc();
+      await docRef.create(readingRecord);
+    }
+
+    // 2. Update singleton latest/current document
+    const latestDocPath = `farms/${farmId}/devices/${deviceId}/latest/current`;
+    const latestDocRef = firestore().doc(latestDocPath);
+    await latestDocRef.set(
       {
-        ...telemetryData,
-        receivedAt: now,
+        ...readingRecord,
         status: 'online',
       },
       { merge: true }
     );
 
-    // 2. If device document exists, update lastSeenAt and set status to 'online'
+    // 3. Update device status and lastSeenAt if device doc exists
     const deviceRef = firestore().doc(`farms/${farmId}/devices/${deviceId}`);
     const deviceSnap = await deviceRef.get();
     if (deviceSnap.exists) {
@@ -81,11 +140,21 @@ export async function handleTelemetryMessage(
     }
 
     logger.info(
-      { farmId, deviceId, nodeId: telemetryData.nodeId, docPath },
-      'Telemetry saved to Firestore'
+      { farmId, deviceId, nodeId: telemetryData.nodeId, bucketName },
+      'Telemetry reading recorded successfully'
     );
+
+    // 4. Trigger alert evaluation (isolated in try/catch to never break ingestion)
+    try {
+      await checkAlerts(farmId, deviceId, readingRecord);
+    } catch (alertErr) {
+      logger.error(
+        { err: alertErr, farmId, deviceId },
+        'Alert check failed during telemetry ingestion'
+      );
+    }
   } catch (err) {
-    logger.error({ err, farmId, deviceId }, 'Failed to write telemetry to Firestore');
+    logger.error({ err, farmId, deviceId }, 'Failed to persist telemetry reading to Firestore');
     throw err;
   }
 }

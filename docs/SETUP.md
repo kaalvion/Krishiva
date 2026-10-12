@@ -1,6 +1,6 @@
 # Krishiva Backend Setup & Verification Guide
 
-This guide covers setting up, running, and verifying Phase 1 (Foundation) and Phase 2 (Auth, Farms, Devices API) of the Krishiva smart-farm IoT platform.
+This guide covers setting up, running, and verifying Phase 1 (Foundation), Phase 2 (Auth, Farms, Devices API), and Phase 3 (Telemetry Storage, History, & Alerts) of the Krishiva smart-farm IoT platform.
 
 ---
 
@@ -29,7 +29,8 @@ krishiva/
 │   │   │   │   ├── auth.ts     # Firebase ID token authentication preHandler
 │   │   │   │   └── mqtt.ts     # EMQX TLS client & subscriptions
 │   │   │   ├── modules/
-│   │   │   │   ├── telemetry/  # Ingestion handler & Zod validation
+│   │   │   │   ├── telemetry/  # Ingestion handler, daily buckets, history & heatmap
+│   │   │   │   ├── alerts/     # Environmental threshold evaluation service
 │   │   │   │   ├── farms/      # Farms routes, schema, & requireFarmMember helper
 │   │   │   │   └── devices/    # Devices registration & lookup routes
 │   │   │   ├── jobs/           # Node-cron scheduler
@@ -98,7 +99,7 @@ cd apps/backend
 npm run dev
 ```
 
-The server will start on `http://localhost:3000`. Swagger API documentation is accessible at `http://localhost:3000/docs`.
+The server starts on `http://localhost:3000`. Swagger API documentation is available at `http://localhost:3000/docs`.
 
 ---
 
@@ -110,13 +111,13 @@ Generate a test Firebase ID token using the helper script:
 npm run token user1@krishiva.com Password123!
 ```
 
-Store this token in a PowerShell environment variable for easy testing:
+Store this token in a PowerShell environment variable:
 
 ```powershell
 $TOKEN = (npm run token user1@krishiva.com Password123! | Select-Object -Last 1)
 ```
 
-Generate a second token for a different user:
+Generate a second token for another test user:
 
 ```powershell
 $TOKEN2 = (npm run token user2@krishiva.com Password123! | Select-Object -Last 1)
@@ -132,32 +133,17 @@ $CreateRes = Invoke-RestMethod -Uri "http://localhost:3000/api/farms" -Method Po
 $FARM_ID = $CreateRes.farmId
 Write-Host "Created Farm ID: $FARM_ID"
 ```
-**Expected Output**: HTTP 201 with a non-empty `farmId`.
-
----
 
 ### Test 2: GET /api/farms returns an array containing that farm
 ```powershell
 $Farms = Invoke-RestMethod -Uri "http://localhost:3000/api/farms" -Method Get -Headers @{ Authorization = "Bearer $TOKEN" }
 $Farms | ConvertTo-Json -Depth 3
 ```
-**Expected Output**: An array containing the newly created farm with `role: "owner"`.
-
----
 
 ### Test 3: farms/{farmId} and farms/{farmId}/members/{uid} exist in Firestore
-Verify directly in Firestore using Node.js:
 ```powershell
 node -e "const admin = require('firebase-admin'); const fs = require('fs'); const sa = JSON.parse(fs.readFileSync('secrets/firebase-admin.json', 'utf8')); admin.initializeApp({ credential: admin.credential.cert(sa) }); const db = admin.firestore(); const farmId = '$FARM_ID'; Promise.all([db.doc('farms/' + farmId).get(), db.collection('farms/' + farmId + '/members').get()]).then(([f, m]) => { console.log('Farm exists:', f.exists); console.log('Members count:', m.size); m.forEach(d => console.log('Member:', d.id, d.data().role)); process.exit(0); });"
 ```
-**Expected Output**:
-```text
-Farm exists: true
-Members count: 1
-Member: <uid> owner
-```
-
----
 
 ### Test 4: GET /api/farms/{farmId} as a DIFFERENT user returns 403
 ```powershell
@@ -168,36 +154,85 @@ try {
   Write-Host "Error Response:" $_.ErrorDetails.Message
 }
 ```
-**Expected Output**:
-```text
-Status Code: 403
-Error Response: {"statusCode":403,"error":"Forbidden","message":"Forbidden: You are not a member of this farm"}
-```
-
----
 
 ### Test 5: GET /api/farms/{farmId}/devices returns the device list
 Register a test device first:
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/devices" -Method Post -Headers @{ Authorization = "Bearer $TOKEN" } -ContentType "application/json" -Body '{"nodeId":1,"name":"Field Node 1","type":"sensor","location":{"zone":"North"},"capabilities":["temperature","humidity"]}'
+$DevRes = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/devices" -Method Post -Headers @{ Authorization = "Bearer $TOKEN" } -ContentType "application/json" -Body '{"nodeId":1,"name":"Field Node 1","type":"sensor","location":{"zone":"North"},"capabilities":["temperature","humidity"]}'
+$DEVICE_ID = $DevRes.deviceId
 ```
 Then query the device list:
 ```powershell
 $Devices = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/devices" -Method Get -Headers @{ Authorization = "Bearer $TOKEN" }
 $Devices | ConvertTo-Json -Depth 3
 ```
-**Expected Output**: HTTP 200 with an array containing the registered device (`nodeId: 1`, `status: "offline"`).
-
----
 
 ### Test 6: Automated test suite is all green
-Run the full Vitest suite:
 ```powershell
 npm test
 ```
-**Expected Output**:
-```text
-Test Files  4 passed (4)
-Tests       25 passed (25)
+
+---
+
+## 7. Phase 3 Verification Checklist (6 Tests)
+
+### Test 1: GET /api/devices/{id}/latest?farmId=X returns the reading
+Publish a reading via MQTT or script, then query latest:
+```powershell
+$Latest = Invoke-RestMethod -Uri "http://localhost:3000/api/devices/$DEVICE_ID/latest?farmId=$FARM_ID" -Method Get -Headers @{ Authorization = "Bearer $TOKEN" }
+$Latest | ConvertTo-Json -Depth 3
 ```
-All tests pass cleanly.
+**Expected Output**: JSON object containing current reading (`temperature`, `humidity`, `soilMoisture`, `nodeId`, `status: "online"`).
+
+---
+
+### Test 2: GET /api/devices/{id}/history?farmId=X&hours=24 returns an array
+```powershell
+$History = Invoke-RestMethod -Uri "http://localhost:3000/api/devices/$DEVICE_ID/history?farmId=$FARM_ID&hours=24" -Method Get -Headers @{ Authorization = "Bearer $TOKEN" }
+$History | ConvertTo-Json -Depth 3
+```
+**Expected Output**: JSON object `{ "deviceId": "...", "hours": 24, "count": N, "readings": [ ... ] }` sorted chronologically ascending.
+
+---
+
+### Test 3: Firestore shows a readings_YYYY_MM_DD collection under the device
+Verify in Firestore using Node.js:
+```powershell
+node -e "const admin = require('firebase-admin'); const fs = require('fs'); const sa = JSON.parse(fs.readFileSync('secrets/firebase-admin.json', 'utf8')); admin.initializeApp({ credential: admin.credential.cert(sa) }); const db = admin.firestore(); const d = new Date(); const bucket = 'readings_' + d.getUTCFullYear() + '_' + String(d.getUTCMonth()+1).padStart(2,'0') + '_' + String(d.getUTCDate()).padStart(2,'0'); db.collection('farms/$FARM_ID/devices/$DEVICE_ID/' + bucket).get().then(s => { console.log('Bucket: ' + bucket + ' exists with ' + s.size + ' readings'); process.exit(0); });"
+```
+**Expected Output**: Prints the daily bucket collection name and the number of stored reading documents.
+
+---
+
+### Test 4: GET /api/farms/{id}/heatmap returns a cells array
+```powershell
+$Heatmap = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/heatmap" -Method Get -Headers @{ Authorization = "Bearer $TOKEN" }
+$Heatmap | ConvertTo-Json -Depth 3
+```
+**Expected Output**: JSON object with `"cells": [ { "deviceId": "...", "name": "...", "nodeId": 1, "soilMoisture": ..., "temperature": ..., "status": "online" } ]`.
+
+---
+
+### Test 5: Publishing soilMoisture 20 creates an alert in Firestore
+Publish a low-soil-moisture telemetry payload:
+```powershell
+node -e "const mqtt = require('mqtt'); const client = mqtt.connect('mqtts://broker.emqx.io:8883', { username: 'krishiva_user', password: 'krishiva_password', rejectUnauthorized: false }); client.on('connect', () => { const payload = JSON.stringify({ nodeId: 1, temperature: 28, humidity: 55, soilMoisture: 20, recordedAt: new Date().toISOString() }); client.publish('krishiva/$FARM_ID/$DEVICE_ID/telemetry', payload, { qos: 1 }, () => { console.log('Published low moisture reading'); client.end(); }); });"
+```
+Verify the alert document in Firestore:
+```powershell
+node -e "const admin = require('firebase-admin'); const fs = require('fs'); const sa = JSON.parse(fs.readFileSync('secrets/firebase-admin.json', 'utf8')); admin.initializeApp({ credential: admin.credential.cert(sa) }); const db = admin.firestore(); db.collection('farms/$FARM_ID/alerts').where('type', '==', 'SOIL_MOISTURE_LOW').get().then(s => { console.log('Found ' + s.size + ' low moisture alerts:'); s.forEach(d => console.log(d.id, d.data().severity, d.data().message)); process.exit(0); });"
+```
+**Expected Output**: Alert document exists with `type: "SOIL_MOISTURE_LOW"`, `severity: "warning"`, `value: 20`, and `acknowledged: false`.
+
+---
+
+### Test 6: Publishing the same seq twice stores only one reading
+Publish two packets with identical sequence number `seq: 999`:
+```powershell
+node -e "const mqtt = require('mqtt'); const client = mqtt.connect('mqtts://broker.emqx.io:8883', { username: 'krishiva_user', password: 'krishiva_password', rejectUnauthorized: false }); client.on('connect', () => { const p1 = JSON.stringify({ nodeId: 1, temperature: 24, humidity: 60, soilMoisture: 45, seq: 999, recordedAt: new Date().toISOString() }); client.publish('krishiva/$FARM_ID/$DEVICE_ID/telemetry', p1, { qos: 1 }, () => { console.log('Published packet 1 (seq: 999)'); client.publish('krishiva/$FARM_ID/$DEVICE_ID/telemetry', p1, { qos: 1 }, () => { console.log('Published duplicate packet 2 (seq: 999)'); client.end(); }); }); });"
+```
+Check the daily bucket for `seq_999`:
+```powershell
+node -e "const admin = require('firebase-admin'); const fs = require('fs'); const sa = JSON.parse(fs.readFileSync('secrets/firebase-admin.json', 'utf8')); admin.initializeApp({ credential: admin.credential.cert(sa) }); const db = admin.firestore(); const d = new Date(); const bucket = 'readings_' + d.getUTCFullYear() + '_' + String(d.getUTCMonth()+1).padStart(2,'0') + '_' + String(d.getUTCDate()).padStart(2,'0'); db.collection('farms/$FARM_ID/devices/$DEVICE_ID/' + bucket).where('seq', '==', 999).get().then(s => { console.log('Matching seq 999 docs count: ' + s.size); process.exit(0); });"
+```
+**Expected Output**: `Matching seq 999 docs count: 1` (the duplicate was skipped, preserving uniqueness).
