@@ -29,6 +29,20 @@
       ]
     },
     {
+      "collectionGroup": "commands",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "farmId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "alerts",
       "queryScope": "COLLECTION",
       "fields": [
@@ -65,6 +79,16 @@
     {
       "collectionGroup": "members",
       "fieldPath": "userId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "commands",
+      "fieldPath": "status",
       "indexes": [
         {
           "order": "ASCENDING",

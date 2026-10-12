@@ -236,3 +236,131 @@ Check the daily bucket for `seq_999`:
 node -e "const admin = require('firebase-admin'); const fs = require('fs'); const sa = JSON.parse(fs.readFileSync('secrets/firebase-admin.json', 'utf8')); admin.initializeApp({ credential: admin.credential.cert(sa) }); const db = admin.firestore(); const d = new Date(); const bucket = 'readings_' + d.getUTCFullYear() + '_' + String(d.getUTCMonth()+1).padStart(2,'0') + '_' + String(d.getUTCDate()).padStart(2,'0'); db.collection('farms/$FARM_ID/devices/$DEVICE_ID/' + bucket).where('seq', '==', 999).get().then(s => { console.log('Matching seq 999 docs count: ' + s.size); process.exit(0); });"
 ```
 **Expected Output**: `Matching seq 999 docs count: 1` (the duplicate was skipped, preserving uniqueness).
+
+---
+
+## 8. Phase 4 Verification Checklist (Actuator Commands & Control Pipeline)
+
+> [!IMPORTANT]
+> **Manual MQTT Testing Notice**:
+> For any manual MQTT testing (inspecting command messages or publishing acknowledgments), use your **EMQX Cloud console's WebSocket / MQTT Client tool** connected to your private cluster (`EMQX_HOST`), **NOT** the public `broker.emqx.io`.
+> When generating test tokens via `npm run token`, use test passwords without special characters (such as `Password123` instead of exclamation marks) to prevent PowerShell escaping issues.
+
+### Preparation: Get Owner and Viewer Tokens
+```powershell
+# Get Farm Owner token (using a password without special characters)
+$OWNER_TOKEN = (npm run token owner@krishiva.com Password123 | Select-Object -Last 1)
+
+# Get Viewer token
+$VIEWER_TOKEN = (npm run token viewer@krishiva.com Password123 | Select-Object -Last 1)
+```
+
+Ensure a target device with the `"pump"` capability is registered under your farm:
+```powershell
+# Register pump actuator device if not already present
+$PumpDev = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/devices" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" } -ContentType "application/json" -Body '{"nodeId":2,"name":"Field Pump Actuator","type":"sensor_actuator","capabilities":["pump","soil_moisture"]}'
+$PUMP_DEVICE_ID = $PumpDev.deviceId
+Write-Host "Pump Device ID: $PUMP_DEVICE_ID"
+```
+
+---
+
+### Test 1: POST /api/commands returns 202 and a commandId
+```powershell
+$CmdRes = Invoke-RestMethod -Uri "http://localhost:3000/api/commands" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" } -ContentType "application/json" -Body "{`"farmId`":`"$FARM_ID`",`"deviceId`":`"$PUMP_DEVICE_ID`",`"action`":`"PUMP_ON`",`"durationSeconds`":300}"
+$CMD_ID = $CmdRes.commandId
+$CmdRes | ConvertTo-Json
+```
+**Expected Output**: HTTP 202 Accepted with body:
+```json
+{
+  "commandId": "cmd-1773489200000-xxxxxx",
+  "status": "pending"
+}
+```
+
+---
+
+### Test 2: The command appears on topic in EMQX Console
+Open your **EMQX Cloud console** -> **WebSocket Client / MQTT Client** connected to your private broker.
+1. Subscribe to topic:
+   `krishiva/+/+/command`
+2. Issue the command using PowerShell (Test 1).
+3. Observe incoming message on `krishiva/<farmId>/<deviceId>/command`:
+```json
+{
+  "commandId": "cmd-1773489200000-xxxxxx",
+  "action": "PUMP_ON",
+  "durationSeconds": 300,
+  "issuedAt": "2026-10-12T15:00:00.000Z"
+}
+```
+
+---
+
+### Test 3: GET /api/commands/{id} shows status "published"
+Immediately after dispatching (within 30 seconds):
+```powershell
+$StatusRes = Invoke-RestMethod -Uri "http://localhost:3000/api/commands/$CMD_ID`?farmId=$FARM_ID&deviceId=$PUMP_DEVICE_ID" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$StatusRes | ConvertTo-Json
+```
+**Expected Output**: JSON document with `status: "published"` and `publishedAt` timestamp populated.
+
+---
+
+### Test 4: Publishing an ACK makes the status "acknowledged"
+In the **EMQX Cloud console MQTT Client page**, publish a message:
+- **Topic**: `krishiva/<farmId>/<deviceId>/ack`
+- **QoS**: `1`
+- **Payload**:
+```json
+{
+  "commandId": "<CMD_ID>",
+  "success": true
+}
+```
+Now re-query command status:
+```powershell
+$AckedRes = Invoke-RestMethod -Uri "http://localhost:3000/api/commands/$CMD_ID`?farmId=$FARM_ID&deviceId=$PUMP_DEVICE_ID" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$AckedRes | ConvertTo-Json
+```
+**Expected Output**: JSON document with `status: "acknowledged"` and `acknowledgedAt` timestamp.
+
+---
+
+### Test 5: With no ACK, the status becomes "expired" after 30 seconds
+Issue a new command without sending any ACK:
+```powershell
+$CmdExpire = Invoke-RestMethod -Uri "http://localhost:3000/api/commands" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" } -ContentType "application/json" -Body "{`"farmId`":`"$FARM_ID`",`"deviceId`":`"$PUMP_DEVICE_ID`",`"action`":`"PUMP_OFF`"}"
+$EXPIRE_CMD_ID = $CmdExpire.commandId
+Write-Host "Issued command: $EXPIRE_CMD_ID. Waiting 35 seconds..."
+Start-Sleep -Seconds 35
+
+$ExpiredRes = Invoke-RestMethod -Uri "http://localhost:3000/api/commands/$EXPIRE_CMD_ID`?farmId=$FARM_ID&deviceId=$PUMP_DEVICE_ID" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$ExpiredRes | ConvertTo-Json
+```
+**Expected Output**: JSON document with `status: "expired"` and `error: "No acknowledgment received within 30 seconds"`.
+
+---
+
+### Test 6: A viewer gets 403 Forbidden
+```powershell
+try {
+  Invoke-RestMethod -Uri "http://localhost:3000/api/commands" -Method Post -Headers @{ Authorization = "Bearer $VIEWER_TOKEN" } -ContentType "application/json" -Body "{`"farmId`":`"$FARM_ID`",`"deviceId`":`"$PUMP_DEVICE_ID`",`"action`":`"PUMP_ON`"}"
+} catch {
+  Write-Host "Status Code:" $_.Exception.Response.StatusCode.value__
+  Write-Host "Response Body:" $_.ErrorDetails.Message
+}
+```
+**Expected Output**: HTTP 403 Forbidden with error message:
+`Forbidden: Requires at least "admin" permissions for this farm`.
+
+---
+
+### Test 7: GET /api/farms/{farmId}/commands returns an array
+```powershell
+$History = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/commands?limit=50" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$History | ConvertTo-Json -Depth 3
+```
+**Expected Output**: JSON array of command records sorted newest first, showing command details across devices for the farm.
+

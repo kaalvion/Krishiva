@@ -8,6 +8,7 @@ import authPlugin from './plugins/auth.js';
 import farmsRoutes from './modules/farms/farms.routes.js';
 import devicesRoutes from './modules/devices/devices.routes.js';
 import telemetryRoutes from './modules/telemetry/telemetry.routes.js';
+import commandsRoutes from './modules/commands/commands.routes.js';
 
 /**
  * Builds and configures the Fastify application instance.
@@ -121,6 +122,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(farmsRoutes, { prefix: '/api/farms' });
   await app.register(devicesRoutes, { prefix: '/api' });
   await app.register(telemetryRoutes, { prefix: '/api' });
+  await app.register(commandsRoutes, { prefix: '/api' });
 
   return app;
 }

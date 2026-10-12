@@ -2,6 +2,7 @@ import mqtt, { type MqttClient } from 'mqtt';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { handleTelemetryMessage } from '../modules/telemetry/telemetry.handler.js';
+import { handleAckMessage } from '../modules/commands/commands.handler.js';
 
 let client: MqttClient | null = null;
 
@@ -56,7 +57,7 @@ export function initMqtt(): MqttClient {
       if (topic.endsWith('/telemetry')) {
         await handleTelemetryMessage(topic, payload);
       } else if (topic.endsWith('/ack')) {
-        logger.info({ topic, payload: payload.toString('utf8') }, 'Device ACK message received');
+        await handleAckMessage(topic, payload);
       }
     } catch (err) {
       logger.error({ err, topic }, 'Error processing incoming MQTT message');
@@ -68,6 +69,34 @@ export function initMqtt(): MqttClient {
 
 export function getMqttClient(): MqttClient | null {
   return client;
+}
+
+/**
+ * Publishes an actuator command to krishiva/{farmId}/{deviceId}/command with QoS 1.
+ * Returns a promise and rejects if MQTT is not connected.
+ */
+export function publishCommand(
+  farmId: string,
+  deviceId: string,
+  payload: unknown
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!client || !client.connected) {
+      return reject(new Error('MQTT client is not connected to broker'));
+    }
+
+    const topic = `krishiva/${farmId}/${deviceId}/command`;
+    const message = typeof payload === 'string' ? payload : JSON.stringify(payload);
+
+    client.publish(topic, message, { qos: 1 }, (err) => {
+      if (err) {
+        logger.error({ err, topic }, 'Failed to publish MQTT command');
+        return reject(err);
+      }
+      logger.info({ topic }, 'MQTT command published successfully');
+      resolve();
+    });
+  });
 }
 
 export async function closeMqtt(): Promise<void> {
@@ -85,5 +114,7 @@ export async function closeMqtt(): Promise<void> {
 export default {
   initMqtt,
   getMqttClient,
+  publishCommand,
   closeMqtt,
 };
+
