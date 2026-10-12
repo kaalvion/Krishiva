@@ -1,0 +1,15 @@
+{
+  "name": "krishiva",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=apps/backend run dev",
+    "build": "npm --workspace=apps/backend run build",
+    "start": "npm --workspace=apps/backend run start",
+    "test": "npm --workspace=apps/backend run test",
+    "token": "npm --workspace=apps/backend run token --"
+  }
+}
