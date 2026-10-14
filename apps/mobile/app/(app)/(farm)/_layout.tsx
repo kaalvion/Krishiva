@@ -10,11 +10,16 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
+import { useUnacknowledgedAlerts } from '../../../src/hooks/useAlerts';
 import { colors } from '../../../src/theme/colors';
 
 export default function FarmTabsLayout() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
+  const { unacknowledgedCount } = useUnacknowledgedAlerts(activeFarm?.id);
+
+  const badgeValue =
+    unacknowledgedCount > 0 ? (unacknowledgedCount > 9 ? '9+' : unacknowledgedCount) : undefined;
 
   const handleBackToFarms = () => {
     router.replace('/(app)/farms');
@@ -92,7 +97,31 @@ export default function FarmTabsLayout() {
         options={{
           title: 'Alerts',
           headerTitle: 'Alerts & Incidents',
+          tabBarBadge: badgeValue,
+          tabBarBadgeStyle: {
+            backgroundColor: colors.error,
+            fontSize: 10,
+            fontWeight: '700',
+          },
           tabBarIcon: ({ color, size }) => <Bell size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="schedule-edit"
+        options={{
+          href: null,
+          title: 'Schedule',
+          headerTitle: 'Schedule Details',
+          tabBarStyle: { display: 'none' },
+          headerLeft: () => (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              accessibilityLabel="Back to Schedules"
+            >
+              <ArrowLeft size={22} color={colors.primaryDark} />
+            </TouchableOpacity>
+          ),
         }}
       />
     </Tabs>

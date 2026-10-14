@@ -11,6 +11,11 @@ import {
   type IssueCommandInput,
   type IssueCommandResponse,
   type CommandRecord,
+  type Schedule,
+  type CreateScheduleInput,
+  type UpdateScheduleInput,
+  type AlertItem,
+  type AlertsResponse,
 } from '../types';
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -44,14 +49,30 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  const method = options.method ?? 'GET';
+  const isPostOrPatch = method === 'POST' || method === 'PATCH';
+  let bodyPayload: string | undefined;
+  if (options.body !== undefined) {
+    bodyPayload = JSON.stringify(options.body);
+  } else if (isPostOrPatch) {
+    // Backend requires Content-Type: application/json and a valid JSON body (e.g. "{}")
+    bodyPayload = '{}';
+  }
+
+  // Send Content-Type only when there is actually a body payload
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (bodyPayload !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   try {
     const res = await fetch(url, {
-      method: options.method ?? 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      method,
+      headers,
+      body: bodyPayload,
       signal: controller.signal,
     });
 
@@ -60,7 +81,10 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     if (!res.ok) {
       let errorData: { error?: string; message?: string } | null = null;
       try {
-        errorData = await res.json();
+        const text = await res.text();
+        if (text) {
+          errorData = JSON.parse(text);
+        }
       } catch {
         // Response body might be empty or non-JSON
       }
@@ -70,7 +94,16 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
       throw new ApiError(res.status, errorText, message);
     }
 
-    return (await res.json()) as T;
+    if (res.status === 204) {
+      return undefined as T;
+    }
+
+    const text = await res.text();
+    if (!text || text.trim().length === 0) {
+      return undefined as T;
+    }
+
+    return JSON.parse(text) as T;
   } catch (err: unknown) {
     clearTimeout(timeoutId);
 
@@ -185,5 +218,90 @@ export async function getFarmCommands(
   limit: number = 50
 ): Promise<CommandRecord[]> {
   return request<CommandRecord[]>(`/api/farms/${farmId}/commands?limit=${limit}`);
+}
+
+/**
+ * Fetches all irrigation and actuator schedules for a farm.
+ */
+export async function getSchedules(farmId: string): Promise<Schedule[]> {
+  return request<Schedule[]>(`/api/farms/${farmId}/schedules`);
+}
+
+/**
+ * Creates a new schedule for an actuator device on a farm.
+ */
+export async function createSchedule(
+  farmId: string,
+  data: CreateScheduleInput
+): Promise<{ scheduleId: string }> {
+  return request<{ scheduleId: string }>(`/api/farms/${farmId}/schedules`, {
+    method: 'POST',
+    body: data,
+  });
+}
+
+/**
+ * Updates an existing schedule (partial body).
+ */
+export async function updateSchedule(
+  farmId: string,
+  scheduleId: string,
+  data: UpdateScheduleInput
+): Promise<Schedule> {
+  return request<Schedule>(`/api/farms/${farmId}/schedules/${scheduleId}`, {
+    method: 'PATCH',
+    body: data,
+  });
+}
+
+/**
+ * Deletes a schedule (204 No Content).
+ */
+export async function deleteSchedule(
+  farmId: string,
+  scheduleId: string
+): Promise<void> {
+  return request<void>(`/api/farms/${farmId}/schedules/${scheduleId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * Fetches alerts for a farm, optionally filtered by acknowledged status.
+ */
+export async function getAlerts(
+  farmId: string,
+  acknowledged?: boolean,
+  limit: number = 50
+): Promise<AlertsResponse> {
+  const query = new URLSearchParams();
+  if (acknowledged !== undefined) {
+    query.append('acknowledged', String(acknowledged));
+  }
+  query.append('limit', String(limit));
+  return request<AlertsResponse>(`/api/farms/${farmId}/alerts?${query.toString()}`);
+}
+
+/**
+ * Acknowledges a single alert (idempotent, returns 200 with updated alert).
+ */
+export async function acknowledgeAlert(
+  farmId: string,
+  alertId: string
+): Promise<AlertItem> {
+  return request<AlertItem>(`/api/farms/${farmId}/alerts/${alertId}/acknowledge`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Acknowledges all active alerts for a farm.
+ */
+export async function acknowledgeAllAlerts(
+  farmId: string
+): Promise<{ count: number }> {
+  return request<{ count: number }>(`/api/farms/${farmId}/alerts/acknowledge-all`, {
+    method: 'POST',
+  });
 }
 

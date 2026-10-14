@@ -30,6 +30,7 @@ import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { FieldHeatmap } from '../../../src/components/FieldHeatmap';
+import { AlertBanner } from '../../../src/components/AlertBanner';
 import { colors } from '../../../src/theme/colors';
 import type { Device, HeatmapCell } from '../../../src/types';
 
@@ -240,6 +241,9 @@ export default function DashboardScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerBlock}>
+      {/* Active Alerts Banner */}
+      <AlertBanner farmId={activeFarm.id} />
+
       {/* Farm Overview Card */}
       <Card style={styles.overviewCard}>
         <View style={styles.overviewHeader}>

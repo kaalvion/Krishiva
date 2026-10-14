@@ -153,3 +153,74 @@ export interface CommandRecord {
   error: string | null;
 }
 
+// Phase 7B: Schedules & Alerts
+export type ScheduleDays = 'daily' | number[]; // array of 0-6 where 0=Sunday
+
+export type ScheduleRunStatus = 'issued' | 'skipped' | 'error' | null;
+
+export interface Schedule {
+  id: string;
+  farmId?: string;
+  deviceId: string;
+  action: ActuatorAction;
+  time: string; // "HH:MM" 24h
+  days: ScheduleDays;
+  durationSeconds?: number | null;
+  enabled: boolean;
+  name?: string;
+  lastRunAt?: string | null;
+  lastRunStatus?: ScheduleRunStatus;
+  lastRunCommandId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateScheduleInput {
+  deviceId: string;
+  action: ActuatorAction;
+  time: string; // "HH:MM"
+  days: ScheduleDays;
+  durationSeconds?: number;
+  enabled: boolean;
+  name?: string;
+}
+
+export interface UpdateScheduleInput {
+  name?: string;
+  time?: string;
+  days?: ScheduleDays;
+  durationSeconds?: number | null;
+  enabled?: boolean;
+  action?: ActuatorAction;
+}
+
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+
+export type AlertType =
+  | 'SOIL_MOISTURE_CRITICAL'
+  | 'SOIL_MOISTURE_LOW'
+  | 'TEMPERATURE_HIGH'
+  | 'HUMIDITY_HIGH'
+  | 'DEVICE_OFFLINE'
+  | string;
+
+export interface AlertItem {
+  id: string;
+  deviceId: string;
+  deviceName?: string | null;
+  type: AlertType;
+  severity: AlertSeverity;
+  message: string;
+  value?: number | null;
+  threshold?: number | null;
+  acknowledged: boolean;
+  acknowledgedAt?: string | null;
+  acknowledgedBy?: string | null;
+  createdAt: string;
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[];
+  unacknowledgedCount: number;
+}
+
