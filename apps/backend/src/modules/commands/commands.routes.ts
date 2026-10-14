@@ -304,7 +304,11 @@ export const commandsRoutes: FastifyPluginAsync = async (fastify) => {
           const allCommands: any[] = [];
 
           for (const devDoc of devicesSnap.docs) {
-            const cmdSnap = await devDoc.ref.collection('commands').limit(limit).get();
+            const cmdSnap = await devDoc.ref
+              .collection('commands')
+              .orderBy('createdAt', 'desc')
+              .limit(limit)
+              .get();
             for (const cmdDoc of cmdSnap.docs) {
               allCommands.push({
                 id: cmdDoc.id,

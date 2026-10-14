@@ -389,4 +389,103 @@ npm run sim:device -- 8K6f2xN9dK1L 5uY7mQ4vR8eW 1
 - When `PUMP_ON` is active, soil moisture increases by ~2 points per 10s cycle until the duration elapses or `PUMP_OFF` is received.
 - Exits cleanly upon pressing `Ctrl+C`.
 
+---
+
+## 10. Phase 7A Verification Checklist (Scheduling, Alerts API & Offline Detection)
+
+### Preparation
+Ensure you have `$OWNER_TOKEN`, `$VIEWER_TOKEN`, `$FARM_ID`, and a pump actuator device `$PUMP_DEVICE_ID` from Phase 4.
+
+---
+
+### Test 1: POST schedule returns 201 and scheduleId; GET lists it
+```powershell
+# Create a schedule for 06:00 Asia/Kolkata
+$SchedRes = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/schedules" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" } -ContentType "application/json" -Body "{`"deviceId`":`"$PUMP_DEVICE_ID`",`"action`":`"PUMP_ON`",`"time`":`"06:00`",`"days`":`"daily`",`"durationSeconds`":900,`"name`":`"Early Morning Irrigation`"}"
+$SCHED_ID = $SchedRes.scheduleId
+Write-Host "Created Schedule ID: $SCHED_ID"
+
+# List farm schedules (sorted by time ascending)
+$Schedules = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/schedules" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$Schedules | ConvertTo-Json -Depth 3
+```
+**Expected Output**: HTTP 201 with `{ "scheduleId": "..." }`, and GET returns an array containing the schedule sorted by `time`.
+
+---
+
+### Test 2: Schedule set 2 minutes ahead issues a command at that minute
+Calculate the time 2 minutes from now in your farm's timezone (`Asia/Kolkata`):
+```powershell
+# Compute HH:mm for 2 minutes ahead
+$TwoMinAhead = (Get-Date).AddMinutes(2).ToString("HH:mm")
+Write-Host "Setting schedule for: $TwoMinAhead"
+
+$AheadRes = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/schedules" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" } -ContentType "application/json" -Body "{`"deviceId`":`"$PUMP_DEVICE_ID`",`"action`":`"PUMP_ON`",`"time`":`"$TwoMinAhead`",`"days`":`"daily`",`"durationSeconds`":300,`"name`":`"Live Scheduler Test`"}"
+$AHEAD_SCHED_ID = $AheadRes.scheduleId
+
+# Keep simulator running in another terminal:
+# npm run sim:device -- <farmId> <deviceId> 1
+# Wait 2.5 minutes for the scheduler cron job to fire
+Start-Sleep -Seconds 150
+
+# Check schedule document for lastRunStatus: "issued"
+$UpdatedSched = (Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/schedules" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }) | Where-Object { $_.id -eq $AHEAD_SCHED_ID }
+$UpdatedSched | ConvertTo-Json
+```
+**Expected Output**: `lastRunStatus` is `"issued"` and `lastRunCommandId` contains the created command ID. In the simulator terminal, the incoming command and acknowledgment are logged.
+
+---
+
+### Test 3: Restarting/triggering scheduler twice in the same minute produces only one command
+The scheduler engine uses atomic document creation at `farms/{farmId}/schedule_runs/{scheduleId}_{YYYYMMDDHHmm}`. If called multiple times within the same minute, the second execution encounters an `ALREADY_EXISTS` collision and safely skips execution.
+
+---
+
+### Test 4: DELETE schedule returns 204
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/schedules/$AHEAD_SCHED_ID" -Method Delete -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+```
+**Expected Output**: HTTP 204 No Content. Querying schedules afterwards confirms removal.
+
+---
+
+### Test 5: GET /api/farms/{farmId}/alerts returns alerts and unacknowledgedCount
+```powershell
+$AlertsRes = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/alerts" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$AlertsRes | ConvertTo-Json -Depth 3
+```
+**Expected Output**: JSON object `{ "alerts": [ ...with deviceName ], "unacknowledgedCount": N }`.
+
+---
+
+### Test 6: Acknowledge an alert; repeated call is idempotent
+```powershell
+# Pick an alert ID
+$TARGET_ALERT_ID = $AlertsRes.alerts[0].id
+
+# Acknowledge
+$AckRes1 = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/alerts/$TARGET_ALERT_ID/acknowledge" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$AckRes1 | ConvertTo-Json
+
+# Acknowledge again (idempotent)
+$AckRes2 = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/alerts/$TARGET_ALERT_ID/acknowledge" -Method Post -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$AckRes2 | ConvertTo-Json
+```
+**Expected Output**: Both calls return HTTP 200 with `acknowledged: true` and `acknowledgedBy`.
+
+---
+
+### Test 7: Device that stops reporting is marked offline with an alert
+The offline detector scans online devices whose `lastSeenAt` is older than 15 minutes. For immediate dev testing, use `OFFLINE_AFTER_MS_OVERRIDE`:
+```powershell
+# In apps/backend/.env, temporarily add:
+# OFFLINE_AFTER_MS_OVERRIDE=60000
+# Run backend or let 1-minute cron cycle execute.
+# Query alerts:
+$OfflineAlerts = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_ID/alerts?acknowledged=false" -Method Get -Headers @{ Authorization = "Bearer $OWNER_TOKEN" }
+$OfflineAlerts.alerts | Where-Object { $_.type -eq "DEVICE_OFFLINE" } | ConvertTo-Json
+```
+**Expected Output**: Stale device has `status: "offline"`, and an alert with `type: "DEVICE_OFFLINE"`, `severity: "warning"`, and `message: "<deviceName> has not reported for 15+ minutes"` exists. Running the detector again suppresses duplicate unacknowledged alerts.
+
+
 

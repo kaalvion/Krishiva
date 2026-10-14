@@ -38,6 +38,7 @@ const envSchema = z.object({
   MQTT_CLIENT_ID_PREFIX: z.string().default('krishiva-backend'),
   CORS_ORIGINS: z.string().default('*'),
   FIREBASE_WEB_API_KEY: z.string().optional(),
+  OFFLINE_AFTER_MS_OVERRIDE: z.coerce.number().optional(),
 });
 
 const result = envSchema.safeParse(process.env);

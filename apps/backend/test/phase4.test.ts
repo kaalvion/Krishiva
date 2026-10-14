@@ -473,6 +473,90 @@ describe('Phase 4: Command Pipeline & Actuator Control Tests', () => {
       expect(json[0].farmId).toBe(farmId);
     });
 
+    it('GET /api/farms/:farmId/commands?limit=N returns newest N commands in descending order', async () => {
+      const orderFarmId = `farm-order-${Date.now()}`;
+      const dev1Id = `dev1-${Date.now()}`;
+      const dev2Id = `dev2-${Date.now()}`;
+
+      // Set up farm and member
+      await firestore().doc(`farms/${orderFarmId}`).set({
+        name: 'Order Test Farm',
+        ownerId: ownerUser.uid,
+      });
+      await firestore().doc(`farms/${orderFarmId}/members/${viewerUser.uid}`).set({
+        userId: viewerUser.uid,
+        role: 'viewer',
+      });
+
+      // Set up 2 devices
+      await firestore().doc(`farms/${orderFarmId}/devices/${dev1Id}`).set({
+        id: dev1Id,
+        farmId: orderFarmId,
+        name: 'Device 1',
+      });
+      await firestore().doc(`farms/${orderFarmId}/devices/${dev2Id}`).set({
+        id: dev2Id,
+        farmId: orderFarmId,
+        name: 'Device 2',
+      });
+
+      // Create 6 commands across the 2 devices with staggered timestamps
+      const baseTime = Date.now();
+      const commands = [
+        { id: `cmd-0-${baseTime}`, devId: dev1Id, t: baseTime, source: 'manual' },
+        { id: `cmd-1-${baseTime}`, devId: dev2Id, t: baseTime + 10000, source: 'manual' },
+        { id: `cmd-2-${baseTime}`, devId: dev1Id, t: baseTime + 20000, source: 'manual' },
+        { id: `cmd-3-${baseTime}`, devId: dev2Id, t: baseTime + 30000, source: 'manual' },
+        { id: `cmd-4-${baseTime}`, devId: dev1Id, t: baseTime + 40000, source: 'manual' },
+        { id: `cmd-5-${baseTime}`, devId: dev2Id, t: baseTime + 50000, source: 'scheduler' },
+      ];
+
+      for (const cmd of commands) {
+        const createdAt = new Date(cmd.t).toISOString();
+        await firestore()
+          .doc(`farms/${orderFarmId}/devices/${cmd.devId}/commands/${cmd.id}`)
+          .set({
+            id: cmd.id,
+            commandId: cmd.id,
+            farmId: orderFarmId,
+            deviceId: cmd.devId,
+            action: 'PUMP_ON',
+            status: 'published',
+            requestedBy: ownerUser.uid,
+            source: cmd.source,
+            createdAt,
+            publishedAt: createdAt,
+            acknowledgedAt: null,
+            error: null,
+          });
+      }
+
+      // Query with limit=3 (when 6 commands exist)
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/farms/${orderFarmId}/commands?limit=3`,
+        headers: { authorization: 'Bearer viewer-token' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const json = res.json();
+      expect(Array.isArray(json)).toBe(true);
+      expect(json.length).toBe(3);
+
+      // Verify that the 3 newest commands come back in descending order
+      expect(json[0].id).toBe(`cmd-5-${baseTime}`);
+      expect(json[0].source).toBe('scheduler');
+      expect(json[1].id).toBe(`cmd-4-${baseTime}`);
+      expect(json[2].id).toBe(`cmd-3-${baseTime}`);
+
+      // Also verify timestamps are strictly descending
+      const t0 = new Date(json[0].createdAt).getTime();
+      const t1 = new Date(json[1].createdAt).getTime();
+      const t2 = new Date(json[2].createdAt).getTime();
+      expect(t0).toBeGreaterThan(t1);
+      expect(t1).toBeGreaterThan(t2);
+    });
+
     it('POST /api/farms/:farmId/members by non-owner returns 403', async () => {
       const res = await app.inject({
         method: 'POST',
