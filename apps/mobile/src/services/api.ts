@@ -1,6 +1,17 @@
 import { auth } from './firebase';
 import { env } from '../config/env';
-import { ApiError, type CreateFarmInput, type Device, type Farm } from '../types';
+import {
+  ApiError,
+  type CreateFarmInput,
+  type Device,
+  type Farm,
+  type HeatmapResponse,
+  type DeviceReading,
+  type DeviceHistoryResponse,
+  type IssueCommandInput,
+  type IssueCommandResponse,
+  type CommandRecord,
+} from '../types';
 
 const REQUEST_TIMEOUT_MS = 15000;
 
@@ -115,3 +126,64 @@ export async function getFarm(farmId: string): Promise<Farm> {
 export async function getDevices(farmId: string): Promise<Device[]> {
   return request<Device[]>(`/api/farms/${farmId}/devices`);
 }
+
+/**
+ * Fetches spatial telemetry heatmap cells across all devices on a farm.
+ */
+export async function getHeatmap(farmId: string): Promise<HeatmapResponse> {
+  return request<HeatmapResponse>(`/api/farms/${farmId}/heatmap`);
+}
+
+/**
+ * Fetches the latest recorded telemetry snapshot for a specific device.
+ */
+export async function getLatest(deviceId: string, farmId: string): Promise<DeviceReading> {
+  return request<DeviceReading>(`/api/devices/${deviceId}/latest?farmId=${encodeURIComponent(farmId)}`);
+}
+
+/**
+ * Fetches historical readings for a device across daily bucket collections.
+ */
+export async function getHistory(
+  deviceId: string,
+  farmId: string,
+  hours: number = 24
+): Promise<DeviceHistoryResponse> {
+  return request<DeviceHistoryResponse>(
+    `/api/devices/${deviceId}/history?farmId=${encodeURIComponent(farmId)}&hours=${hours}`
+  );
+}
+
+/**
+ * Issues an actuator command (e.g. PUMP_ON, PUMP_OFF).
+ */
+export async function issueCommand(data: IssueCommandInput): Promise<IssueCommandResponse> {
+  return request<IssueCommandResponse>('/api/commands', {
+    method: 'POST',
+    body: data,
+  });
+}
+
+/**
+ * Fetches current status and audit metadata of a specific command.
+ */
+export async function getCommand(
+  commandId: string,
+  farmId: string,
+  deviceId: string
+): Promise<CommandRecord> {
+  return request<CommandRecord>(
+    `/api/commands/${commandId}?farmId=${encodeURIComponent(farmId)}&deviceId=${encodeURIComponent(deviceId)}`
+  );
+}
+
+/**
+ * Fetches recent commands for a farm (newest first).
+ */
+export async function getFarmCommands(
+  farmId: string,
+  limit: number = 50
+): Promise<CommandRecord[]> {
+  return request<CommandRecord[]>(`/api/farms/${farmId}/commands?limit=${limit}`);
+}
+

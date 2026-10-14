@@ -364,3 +364,29 @@ $History | ConvertTo-Json -Depth 3
 ```
 **Expected Output**: JSON array of command records sorted newest first, showing command details across devices for the farm.
 
+---
+
+## 9. IoT Device Simulator (Phase 5B Helper)
+
+A developer-only device simulator script is available in `apps/backend/scripts/simulate-device.ts` to test live mobile telemetry dashboards, heatmaps, and remote actuator commands without requiring physical hardware.
+
+### Running the Simulator
+
+```powershell
+cd apps/backend
+npm run sim:device -- <farmId> <deviceId> <nodeId>
+```
+
+**Example:**
+```powershell
+npm run sim:device -- 8K6f2xN9dK1L 5uY7mQ4vR8eW 1
+```
+
+### Behavior & Features:
+- Connects to your private EMQX broker via TLS (`EMQX_HOST`, `EMQX_PORT`, `EMQX_USERNAME`, `EMQX_PASSWORD`).
+- Publishes telemetry every 10 seconds to `krishiva/{farmId}/{deviceId}/telemetry` with smoothly drifting temperature (24–36°C), humidity (40–80%), and soil moisture (20–70%).
+- Subscribes to `krishiva/{farmId}/{deviceId}/command`. On incoming commands, waits 2 seconds, publishes `{ commandId, success: true }` to `krishiva/{farmId}/{deviceId}/ack`, and updates actuator state.
+- When `PUMP_ON` is active, soil moisture increases by ~2 points per 10s cycle until the duration elapses or `PUMP_OFF` is received.
+- Exits cleanly upon pressing `Ctrl+C`.
+
+
