@@ -10,6 +10,8 @@
     "build": "npm --workspace=apps/backend run build",
     "start": "npm --workspace=apps/backend run start",
     "test": "npm --workspace=apps/backend run test",
-    "token": "npm --workspace=apps/backend run token --"
+    "token": "npm --workspace=apps/backend run token --",
+    "admin": "npm --workspace=@krishiva/admin run dev",
+    "admin:build": "npm --workspace=@krishiva/admin run build"
   }
 }

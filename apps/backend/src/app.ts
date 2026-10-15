@@ -54,6 +54,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       env.CORS_ORIGINS === '*'
         ? true
         : env.CORS_ORIGINS.split(',').map((origin) => origin.trim()),
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
     credentials: true,
   });
 
