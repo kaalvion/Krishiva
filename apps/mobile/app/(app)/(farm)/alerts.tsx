@@ -19,6 +19,7 @@ import {
   Cpu,
   Layers,
   Database,
+  Sparkles,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
@@ -114,6 +115,10 @@ export default function AlertsScreen() {
         return 'High temperature';
       case 'HUMIDITY_HIGH':
         return 'High humidity';
+      case 'HEAT_STRESS':
+        return 'Heat stress';
+      case 'RAPID_DRY_DOWN':
+        return 'Rapid dry-down';
       case 'DEVICE_OFFLINE':
         return 'Device offline';
       default:
@@ -216,6 +221,16 @@ export default function AlertsScreen() {
         </View>
 
         <Text style={styles.messageText}>{item.message}</Text>
+
+        {Boolean(item.aiExplanation) && (
+          <View style={styles.aiExplanationBox}>
+            <View style={styles.aiExplanationHeader}>
+              <Sparkles size={13} color={colors.primary} />
+              <Text style={styles.aiExplanationLabel}>AI Assistant</Text>
+            </View>
+            <Text style={styles.aiExplanationText}>{item.aiExplanation}</Text>
+          </View>
+        )}
 
         <View style={styles.cardFooter}>
           <View style={styles.timeRow}>
@@ -542,6 +557,32 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 18,
     marginBottom: 12,
+  },
+  aiExplanationBox: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  aiExplanationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  aiExplanationLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primaryDark,
+    letterSpacing: 0.3,
+  },
+  aiExplanationText: {
+    fontSize: 12,
+    color: colors.text,
+    lineHeight: 17,
   },
   cardFooter: {
     flexDirection: 'row',

@@ -21,6 +21,7 @@ import { env } from '../config/env';
 interface ServerStatusContextType {
   serverOnline: boolean;
   checking: boolean;
+  aiEnabled: boolean;
   recheck: () => Promise<boolean>;
 }
 
@@ -31,6 +32,7 @@ export const ServerStatusProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [serverOnline, setServerOnline] = useState<boolean>(true);
   const [checking, setChecking] = useState<boolean>(false);
+  const [aiEnabled, setAiEnabled] = useState<boolean>(false);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const checkHealth = useCallback(async (): Promise<boolean> => {
@@ -53,6 +55,16 @@ export const ServerStatusProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const isOk = res.ok;
       setServerOnline(isOk);
+
+      if (isOk) {
+        try {
+          const data = (await res.json()) as any;
+          if (data && typeof data.aiEnabled === 'boolean') {
+            setAiEnabled(data.aiEnabled);
+          }
+        } catch {}
+      }
+
       setChecking(false);
       return isOk;
     } catch {
@@ -95,6 +107,7 @@ export const ServerStatusProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         serverOnline,
         checking,
+        aiEnabled,
         recheck: checkHealth,
       }}
     >

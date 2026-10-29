@@ -22,7 +22,7 @@ describe('Fastify Application Routes', () => {
       url: '/health',
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json()).toMatchObject({ status: 'ok', aiEnabled: expect.any(Boolean) });
   });
 
   it('GET /docs renders documentation', async () => {
@@ -43,5 +43,23 @@ describe('Fastify Application Routes', () => {
     const json = res.json();
     expect(json.statusCode).toBe(401);
     expect(json.error).toBe('Unauthorized');
+  });
+
+  it('GET /api/farms/:farmId/ai/water-report without a token returns 401 Unauthorized', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/farms/farm-test-1/ai/water-report',
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe('Unauthorized');
+  });
+
+  it('GET /api/farms/:farmId/ai/yield-report without a token returns 401 Unauthorized', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/farms/farm-test-1/ai/yield-report',
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe('Unauthorized');
   });
 });

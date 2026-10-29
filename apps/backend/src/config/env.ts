@@ -39,6 +39,10 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().default('*'),
   FIREBASE_WEB_API_KEY: z.string().optional(),
   OFFLINE_AFTER_MS_OVERRIDE: z.coerce.number().optional(),
+  GROK_API_KEY: z.string().default(''),
+  GROK_BASE_URL: z.string().default('https://api.x.ai/v1'),
+  GROK_MODEL: z.string().default('grok-2-latest'),
+  AI_ENABLED: z.enum(['true', 'false']).default('false'),
 });
 
 const result = envSchema.safeParse(process.env);

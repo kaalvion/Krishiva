@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { firestore } from '../../plugins/firebase.js';
 import { logger } from '../../utils/logger.js';
 import { checkAlerts } from '../alerts/alerts.service.js';
+import { checkAnomaly } from '../ai/anomaly.service.js';
 
 export const telemetryPayloadSchema = z.object({
   nodeId: z.coerce
@@ -144,9 +145,17 @@ export async function handleTelemetryMessage(
       'Telemetry reading recorded successfully'
     );
 
-    // 4. Trigger alert evaluation (isolated in try/catch to never break ingestion)
+    // 4. Trigger alert evaluation and statistical anomaly detection (isolated)
     try {
       await checkAlerts(farmId, deviceId, readingRecord);
+
+      // Asynchronous non-blocking Z-score anomaly check
+      checkAnomaly(farmId, deviceId, readingRecord).catch((anomalyErr) => {
+        logger.error(
+          { err: anomalyErr, farmId, deviceId },
+          'Background anomaly detection failed during telemetry ingestion'
+        );
+      });
     } catch (alertErr) {
       logger.error(
         { err: alertErr, farmId, deviceId },

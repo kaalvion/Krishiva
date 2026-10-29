@@ -123,6 +123,18 @@ service cloud.firestore {
       match /schedule_runs/{runId} {
         allow read, write: if false;
       }
+
+      // Weather forecast and agrometeorology cache
+      match /weather/{docId} {
+        allow read: if isMember(farmId);
+        allow write: if false;
+      }
+
+      // AI intelligence: farm brief and health score
+      match /ai/{docId} {
+        allow read: if isMember(farmId);
+        allow write: if false;
+      }
     }
   }
 }

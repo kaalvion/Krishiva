@@ -11,6 +11,11 @@ import telemetryRoutes from './modules/telemetry/telemetry.routes.js';
 import commandsRoutes from './modules/commands/commands.routes.js';
 import schedulesRoutes from './modules/schedules/schedules.routes.js';
 import alertsRoutes from './modules/alerts/alerts.routes.js';
+import weatherRoutes from './modules/weather/weather.routes.js';
+import aiRoutes from './modules/ai/ai.routes.js';
+import irrigationRoutes from './modules/ai/irrigation.routes.js';
+import { reportsRoutes } from './modules/ai/reports.routes.js';
+import { isGrokEnabled } from './modules/ai/grok.client.js';
 
 /**
  * Builds and configures the Fastify application instance.
@@ -112,13 +117,14 @@ export async function buildApp(): Promise<FastifyInstance> {
             type: 'object',
             properties: {
               status: { type: 'string', example: 'ok' },
+              aiEnabled: { type: 'boolean', example: false },
             },
           },
         },
       },
     },
     async () => {
-      return { status: 'ok' };
+      return { status: 'ok', aiEnabled: isGrokEnabled() };
     }
   );
 
@@ -129,6 +135,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(commandsRoutes, { prefix: '/api' });
   await app.register(schedulesRoutes, { prefix: '/api' });
   await app.register(alertsRoutes, { prefix: '/api' });
+  await app.register(weatherRoutes, { prefix: '/api' });
+  await app.register(aiRoutes, { prefix: '/api' });
+  await app.register(irrigationRoutes, { prefix: '/api' });
+  await app.register(reportsRoutes, { prefix: '/api' });
 
   return app;
 }

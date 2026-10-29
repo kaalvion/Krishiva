@@ -217,10 +217,43 @@ export interface AlertItem {
   acknowledgedAt?: string | null;
   acknowledgedBy?: string | null;
   createdAt: string;
+  aiExplanation?: string | null;
+  cooldownKey?: string;
 }
 
 export interface AlertsResponse {
   alerts: AlertItem[];
   unacknowledgedCount: number;
+}
+
+export interface WaterReport {
+  actualLitres: number;
+  optimalLitres: number;
+  efficiencyPct: number;
+  suggestion: string;
+  totalPumpSeconds?: number;
+  pumpSessionsCount?: number;
+  et0SumMm?: number;
+  cropCoefficient?: number;
+  cropType?: string;
+  areaAcres?: number;
+  computedAt: string;
+}
+
+export interface YieldReport {
+  crop: string;
+  baseYield: number;
+  predictedYield: number;
+  yieldLossPct: number;
+  stressEvents: {
+    droughtDays: number;
+    heatStressDays: number;
+    floodDays: number;
+    accumulatedGDD: number;
+  };
+  confidencePct: number;
+  message: string;
+  computedAt: string;
+  usingDefaultPlantingDate?: boolean;
 }
 

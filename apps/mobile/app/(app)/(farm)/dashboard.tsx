@@ -20,10 +20,21 @@ import {
   CloudRain,
   Activity,
   Database,
+  Sparkles,
+  ShieldAlert,
+  Sun,
+  CheckCircle2,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { ServerStatusBanner } from '../../../src/context/ServerStatusContext';
-import { useLiveDevices, useLiveHeatmap } from '../../../src/hooks/live';
+import { ServerStatusBanner, useServerStatus } from '../../../src/context/ServerStatusContext';
+import {
+  useLiveDevices,
+  useLiveHeatmap,
+  useLiveBrief,
+  useLiveHealth,
+  useLiveWeather,
+  useLiveIrrigation,
+} from '../../../src/hooks/live';
 import {
   computeEffectiveStatus,
   getReadingFreshness,
@@ -43,6 +54,7 @@ import type { Device } from '../../../src/types';
 export default function DashboardScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
+  const { aiEnabled } = useServerStatus();
 
   const {
     devices,
@@ -58,6 +70,11 @@ export default function DashboardScreen() {
     error: heatmapErr,
     fromCache: heatmapFromCache,
   } = useLiveHeatmap(activeFarm?.id);
+
+  const { brief, loading: briefLoading } = useLiveBrief(activeFarm?.id);
+  const { health, loading: healthLoading } = useLiveHealth(activeFarm?.id);
+  const { weather, loading: weatherLoading } = useLiveWeather(activeFarm?.id);
+  const { irrigation } = useLiveIrrigation(activeFarm?.id);
 
   const isFromCache = devicesFromCache || heatmapFromCache;
   const isRefreshing = false; // Firestore onSnapshot pushes live updates automatically
@@ -151,6 +168,38 @@ export default function DashboardScreen() {
   const moistureBadge = getMoistureBadge(avgMoisture);
   const tempBadge = getTempBadge(avgTemp);
   const humidityBadge = getHumidityBadge(avgHumidity);
+
+  const isWeatherStaleOrMissing =
+    !weather ||
+    !weather.fetchedAt ||
+    Date.now() - new Date(weather.fetchedAt).getTime() > 6 * 60 * 60 * 1000;
+
+  const healthColor =
+    health?.color === 'green'
+      ? '#2E7D32'
+      : health?.color === 'yellow'
+      ? '#D97706'
+      : '#DC2626';
+
+  const healthBg =
+    health?.color === 'green'
+      ? '#E8F5E9'
+      : health?.color === 'yellow'
+      ? '#FEF3C7'
+      : '#FEE2E2';
+
+  const urgencyBadge = {
+    low: { text: 'Low Urgency', bg: '#E8F5E9', color: '#2E7D32' },
+    medium: { text: 'Medium Urgency', bg: '#FEF3C7', color: '#D97706' },
+    high: { text: 'Action Needed', bg: '#FEE2E2', color: '#DC2626' },
+  }[brief?.urgency || 'low'];
+
+  const irrigationTheme = {
+    high: { color: '#DC2626', bg: '#FEE2E2', border: '#FCA5A5', label: 'Action Needed' },
+    medium: { color: '#D97706', bg: '#FEF3C7', border: '#FDE68A', label: 'Irrigate Soon' },
+    low: { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', label: 'Wait for Rain' },
+    none: { color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0', label: 'Adequate Moisture' },
+  }[irrigation?.urgency || 'none'];
 
   const renderDeviceCard = ({ item }: { item: Device }) => {
     const effectiveStatus = computeEffectiveStatus(item.lastSeenAt);
@@ -260,6 +309,203 @@ export default function DashboardScreen() {
             </Text>
           </View>
         </View>
+      </Card>
+
+      {/* 1. Today's Farm Brief Card (Hidden if AI is disabled) */}
+      {aiEnabled && (
+        <Card style={styles.aiCard}>
+          <View style={styles.aiCardHeader}>
+            <View style={styles.aiCardTitleRow}>
+              <View style={styles.aiIconBubble}>
+                <Sparkles size={16} color={colors.primary} />
+              </View>
+              <Text style={styles.aiCardTitle}>Today's Farm Brief</Text>
+            </View>
+            {brief && (
+              <View style={[styles.urgencyBadge, { backgroundColor: urgencyBadge.bg }]}>
+                <Text style={[styles.urgencyBadgeText, { color: urgencyBadge.color }]}>
+                  {urgencyBadge.text}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {brief ? (
+            <View style={styles.briefContent}>
+              <Text style={styles.briefHeadline}>{brief.headline}</Text>
+              <Text style={styles.briefBody} numberOfLines={2}>
+                {brief.body}
+              </Text>
+              {brief.actionNow && brief.actionNow !== 'null' && (
+                <View style={styles.briefActionRow}>
+                  <CheckCircle2 size={14} color={colors.primary} />
+                  <Text style={styles.briefActionText} numberOfLines={1}>
+                    {brief.actionNow}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.briefSkeleton}>
+              <Text style={styles.briefSkeletonTitle}>Brief arrives at 6 AM</Text>
+              <Text style={styles.briefSkeletonSub}>
+                Daily AI agronomy brief is generated each morning and evening.
+              </Text>
+            </View>
+          )}
+        </Card>
+      )}
+
+      {/* 2. Farm Health Gauge Card */}
+      <Card style={styles.aiCard}>
+        <View style={styles.aiCardHeader}>
+          <View style={styles.aiCardTitleRow}>
+            <View style={[styles.aiIconBubble, { backgroundColor: healthBg }]}>
+              <Activity size={16} color={healthColor} />
+            </View>
+            <Text style={styles.aiCardTitle}>Farm Health</Text>
+          </View>
+          <View style={[styles.urgencyBadge, { backgroundColor: healthBg }]}>
+            <Text style={[styles.urgencyBadgeText, { color: healthColor }]}>
+              {health ? `${health.score}/100` : 'Calculating...'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.healthRow}>
+          <View style={[styles.healthRing, { borderColor: healthColor }]}>
+            <Text style={[styles.healthScoreText, { color: healthColor }]}>
+              {health?.score ?? '--'}
+            </Text>
+          </View>
+          <View style={styles.healthDetails}>
+            <Text style={styles.healthStatusTitle}>
+              {health
+                ? health.score >= 80
+                  ? 'Optimal Crop Condition'
+                  : health.score >= 60
+                  ? 'Moderate Condition'
+                  : 'Attention Required'
+                : 'Evaluating metrics...'}
+            </Text>
+            {health && health.reasons.length > 0 ? (
+              <View style={styles.reasonsWrap}>
+                {health.reasons.map((reason, idx) => (
+                  <View key={idx} style={styles.reasonChip}>
+                    <Text style={styles.reasonChipText}>{reason}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.healthSubtext}>All sensor nodes and parameters are within normal ranges.</Text>
+            )}
+          </View>
+        </View>
+      </Card>
+
+      {/* 2.5 Irrigation Forecast Card */}
+      {Boolean(irrigation) && (
+        <Card style={[styles.aiCard, { borderColor: irrigationTheme.border, borderWidth: 1 }]}>
+          <View style={styles.aiCardHeader}>
+            <View style={styles.aiCardTitleRow}>
+              <View style={[styles.aiIconBubble, { backgroundColor: irrigationTheme.bg }]}>
+                <Droplets size={16} color={irrigationTheme.color} />
+              </View>
+              <Text style={styles.aiCardTitle}>Irrigation Forecast</Text>
+            </View>
+            <View style={[styles.urgencyBadge, { backgroundColor: irrigationTheme.bg }]}>
+              <Text style={[styles.urgencyBadgeText, { color: irrigationTheme.color }]}>
+                {irrigationTheme.label}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.irrigationMessage}>{irrigation!.message}</Text>
+
+          <View style={styles.irrigationTrajectoryRow}>
+            <View style={styles.trajectoryStep}>
+              <Text style={styles.trajectoryLabel}>Current</Text>
+              <Text style={[styles.trajectoryValue, { color: colors.text }]}>
+                {irrigation!.currentSoil}%
+              </Text>
+            </View>
+            <Text style={styles.trajectoryArrow}>→</Text>
+            <View style={styles.trajectoryStep}>
+              <Text style={styles.trajectoryLabel}>In 1h</Text>
+              <Text
+                style={[
+                  styles.trajectoryValue,
+                  { color: irrigation!.predicted1h < 20 ? '#DC2626' : colors.text },
+                ]}
+              >
+                {irrigation!.predicted1h}%
+              </Text>
+            </View>
+            <Text style={styles.trajectoryArrow}>→</Text>
+            <View style={styles.trajectoryStep}>
+              <Text style={styles.trajectoryLabel}>In 3h</Text>
+              <Text
+                style={[
+                  styles.trajectoryValue,
+                  { color: irrigation!.predicted3h < 25 ? '#D97706' : colors.text },
+                ]}
+              >
+                {irrigation!.predicted3h}%
+              </Text>
+            </View>
+            <Text style={styles.trajectoryArrow}>→</Text>
+            <View style={styles.trajectoryStep}>
+              <Text style={styles.trajectoryLabel}>In 6h</Text>
+              <Text style={[styles.trajectoryValue, { color: colors.textSecondary }]}>
+                {irrigation!.predicted6h}%
+              </Text>
+            </View>
+          </View>
+        </Card>
+      )}
+
+      {/* 3. Weather Card */}
+      <Card style={styles.aiCard}>
+        <View style={styles.aiCardHeader}>
+          <View style={styles.aiCardTitleRow}>
+            <View style={[styles.aiIconBubble, { backgroundColor: '#E0F2FE' }]}>
+              <CloudRain size={16} color="#0284C7" />
+            </View>
+            <Text style={styles.aiCardTitle}>Weather Forecast</Text>
+          </View>
+          {!isWeatherStaleOrMissing && (
+            <Badge label="Open-Meteo" variant="neutral" />
+          )}
+        </View>
+
+        {isWeatherStaleOrMissing ? (
+          <View style={styles.weatherUnavailableBlock}>
+            <Text style={styles.weatherUnavailableText}>Forecast unavailable</Text>
+          </View>
+        ) : (
+          <View style={styles.weatherMetricsRow}>
+            <View style={styles.weatherMetric}>
+              <Text style={styles.weatherMetricLabel}>Rain Next 6h</Text>
+              <Text style={styles.weatherMetricValue}>
+                {weather?.rainNext6hMm ?? 0} mm
+              </Text>
+            </View>
+            <View style={styles.weatherDivider} />
+            <View style={styles.weatherMetric}>
+              <Text style={styles.weatherMetricLabel}>Rain Next 24h</Text>
+              <Text style={styles.weatherMetricValue}>
+                {weather?.rainNext24hMm ?? 0} mm
+              </Text>
+            </View>
+            <View style={styles.weatherDivider} />
+            <View style={styles.weatherMetric}>
+              <Text style={styles.weatherMetricLabel}>Max Temp Today</Text>
+              <Text style={styles.weatherMetricValue}>
+                {weather?.dailySummary?.[0]?.tempMax ?? '--'}°C
+              </Text>
+            </View>
+          </View>
+        )}
       </Card>
 
       {/* Live Telemetry Status Bar */}
@@ -684,5 +930,201 @@ const styles = StyleSheet.create({
   lastSeenText: {
     fontSize: 11,
     color: colors.textMuted,
+  },
+  aiCard: {
+    padding: 16,
+    marginBottom: 12,
+  },
+  aiCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  aiCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiIconBubble: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.primarySurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  urgencyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  urgencyBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  briefContent: {
+    gap: 6,
+  },
+  briefHeadline: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    lineHeight: 20,
+  },
+  briefBody: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  briefActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    backgroundColor: colors.primarySurface,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  briefActionText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: '600',
+    flex: 1,
+  },
+  briefSkeleton: {
+    paddingVertical: 8,
+  },
+  briefSkeletonTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  briefSkeletonSub: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  healthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  healthRing: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  healthScoreText: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  healthDetails: {
+    flex: 1,
+    gap: 4,
+  },
+  healthStatusTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  healthSubtext: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  reasonsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+  },
+  reasonChip: {
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  reasonChipText: {
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
+  irrigationMessage: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  irrigationTrajectoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  trajectoryStep: {
+    alignItems: 'center',
+  },
+  trajectoryLabel: {
+    fontSize: 10,
+    color: colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  trajectoryValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  trajectoryArrow: {
+    fontSize: 14,
+    color: colors.textMuted,
+    fontWeight: '700',
+  },
+  weatherUnavailableBlock: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  weatherUnavailableText: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  weatherMetricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 4,
+  },
+  weatherMetric: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  weatherMetricLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  weatherMetricValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  weatherDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.borderLight,
   },
 });

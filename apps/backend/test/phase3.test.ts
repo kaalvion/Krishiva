@@ -214,6 +214,17 @@ describe('Phase 3 API & Telemetry Storage Tests', () => {
       currentUser = ownerUser;
       const topic = `krishiva/${farmId}/${deviceId}/telemetry`;
 
+      // 0. Ingest first low soil reading (so alertPayload1 completes 2 consecutive readings for smart alerts)
+      const alertPayload0 = JSON.stringify({
+        nodeId: 1,
+        temperature: 30.0,
+        humidity: 50.0,
+        soilMoisture: 22.0,
+        seq: 100,
+        recordedAt: new Date(Date.now() + 1000).toISOString(),
+      });
+      await handleTelemetryMessage(topic, alertPayload0);
+
       // 1. Ingest low soil moisture reading (20 <= 25)
       const alertPayload1 = JSON.stringify({
         nodeId: 1,
@@ -221,7 +232,7 @@ describe('Phase 3 API & Telemetry Storage Tests', () => {
         humidity: 50.0,
         soilMoisture: 20.0,
         seq: 101,
-        recordedAt: new Date().toISOString(),
+        recordedAt: new Date(Date.now() + 2000).toISOString(),
       });
       await handleTelemetryMessage(topic, alertPayload1);
 
