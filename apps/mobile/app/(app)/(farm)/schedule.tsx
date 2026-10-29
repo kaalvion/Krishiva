@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,24 +15,22 @@ import {
   Clock,
   Cpu,
   Calendar,
-  AlertTriangle,
   Info,
   CheckCircle2,
   XCircle,
   Layers,
+  Database,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useDevices } from '../../../src/hooks/useDevices';
-import {
-  useSchedules,
-  useUpdateSchedule,
-} from '../../../src/hooks/useSchedules';
+import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveDevices, useLiveSchedules } from '../../../src/hooks/live';
+import { useUpdateSchedule } from '../../../src/hooks/useSchedules';
 import { Card } from '../../../src/components/Card';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { colors } from '../../../src/theme/colors';
-import type { Schedule, ScheduleDays, ActuatorAction } from '../../../src/types';
+import type { Schedule, ActuatorAction } from '../../../src/types';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -94,20 +92,26 @@ export function formatRelativeTime(timestamp: string): string {
 export default function ScheduleScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
+  const { serverOnline } = useServerStatus();
   const farmId = activeFarm?.id;
 
   const isOwnerOrAdmin = activeFarm?.role === 'owner' || activeFarm?.role === 'admin';
 
+  // Live queries directly from Firestore
   const {
-    data: schedules,
-    isLoading: schedulesLoading,
-    isError,
-    error,
-    refetch,
-    isRefetching,
-  } = useSchedules(farmId);
+    schedules,
+    loading: schedulesLoading,
+    error: schedulesErr,
+    fromCache: schedulesFromCache,
+    refresh: refreshSchedules,
+  } = useLiveSchedules(farmId);
 
-  const { data: devices } = useDevices(farmId);
+  const {
+    devices,
+    fromCache: devicesFromCache,
+    refresh: refreshDevices,
+  } = useLiveDevices(farmId);
+
   const updateScheduleMutation = useUpdateSchedule(farmId);
 
   // Device lookup map
@@ -127,7 +131,18 @@ export default function ScheduleScreen() {
     return [...schedules].sort((a, b) => a.time.localeCompare(b.time));
   }, [schedules]);
 
+  const isFromCache = schedulesFromCache || devicesFromCache;
+
+  const handleRefresh = async () => {
+    refreshSchedules();
+    refreshDevices();
+  };
+
   const handleToggle = (schedule: Schedule, newValue: boolean) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     if (!isOwnerOrAdmin) return;
     updateScheduleMutation.mutate({
       scheduleId: schedule.id,
@@ -136,6 +151,10 @@ export default function ScheduleScreen() {
   };
 
   const handleEdit = (schedule: Schedule) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     if (!isOwnerOrAdmin) return;
     router.push({
       pathname: '/(app)/(farm)/schedule-edit',
@@ -144,6 +163,10 @@ export default function ScheduleScreen() {
   };
 
   const handleAddSchedule = () => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     router.push('/(app)/(farm)/schedule-edit');
   };
 
@@ -187,7 +210,7 @@ export default function ScheduleScreen() {
               <Switch
                 value={item.enabled}
                 onValueChange={(val) => handleToggle(item, val)}
-                disabled={!isOwnerOrAdmin}
+                disabled={!isOwnerOrAdmin || !serverOnline}
                 trackColor={{ false: '#D1D5DB', true: colors.primaryLight }}
                 thumbColor={item.enabled ? colors.primary : '#9CA3AF'}
               />
@@ -263,6 +286,17 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+
+      {/* Showing Cached Data Banner if from cache */}
+      {isFromCache && (
+        <View style={styles.cacheBanner}>
+          <Database size={13} color={colors.textSecondary} />
+          <Text style={styles.cacheBannerText}>Showing saved offline schedules</Text>
+        </View>
+      )}
+
       {/* Top Bar with Timezone Note & Add Button */}
       <View style={styles.topBar}>
         <View style={styles.topBarInfo}>
@@ -278,7 +312,7 @@ export default function ScheduleScreen() {
 
         {isOwnerOrAdmin && (
           <TouchableOpacity
-            style={styles.addButton}
+            style={[styles.addButton, !serverOnline && styles.buttonDisabled]}
             onPress={handleAddSchedule}
             activeOpacity={0.8}
             accessibilityRole="button"
@@ -291,12 +325,12 @@ export default function ScheduleScreen() {
       </View>
 
       {/* Main Content */}
-      {schedulesLoading ? (
+      {schedulesLoading && sortedSchedules.length === 0 ? (
         <LoadingView label="Loading irrigation schedules..." />
-      ) : isError ? (
+      ) : schedulesErr && sortedSchedules.length === 0 ? (
         <ErrorView
-          message={error instanceof Error ? error.message : 'Failed to load schedules'}
-          onRetry={refetch}
+          message={schedulesErr instanceof Error ? schedulesErr.message : 'Failed to load schedules'}
+          onRetry={handleRefresh}
         />
       ) : (
         <FlatList
@@ -309,8 +343,8 @@ export default function ScheduleScreen() {
           ]}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
+              refreshing={false}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
               colors={[colors.primary]}
             />
@@ -341,6 +375,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
     backgroundColor: colors.background,
+  },
+  cacheBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  cacheBannerText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   topBar: {
     flexDirection: 'row',
@@ -380,6 +431,9 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
   addButtonText: {
     fontSize: 13,
     fontWeight: '700',
@@ -399,22 +453,23 @@ const styles = StyleSheet.create({
   },
   cardDisabled: {
     opacity: 0.65,
+    backgroundColor: '#F9FAFB',
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   headerLeft: {
     flex: 1,
-    marginRight: 10,
+    marginRight: 12,
   },
   headerRight: {
     alignItems: 'flex-end',
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: colors.text,
     marginBottom: 4,
@@ -425,12 +480,12 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
   },
   deviceName: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: colors.textMuted,
+    fontWeight: '500',
   },
   dotSeparator: {
     fontSize: 12,
@@ -438,34 +493,31 @@ const styles = StyleSheet.create({
   },
   actionBadge: {
     fontSize: 11,
-    color: colors.primaryDark,
-    backgroundColor: colors.primarySurface,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: colors.primary,
   },
   timeAndDaysRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 10,
+    paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-    gap: 8,
+    borderBottomWidth: 1,
+    borderColor: colors.borderLight,
+    marginVertical: 4,
   },
   timeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: colors.primarySurface,
-    paddingVertical: 5,
     paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: 8,
   },
   timeText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.primaryDark,
   },
   dayChipsContainer: {
@@ -474,21 +526,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   dailyChip: {
-    backgroundColor: '#EEF2EE',
-    paddingVertical: 4,
+    backgroundColor: colors.primarySurface,
     paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   dailyChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.textSecondary,
+    color: colors.primary,
   },
   dayChip: {
-    backgroundColor: '#EEF2EE',
-    paddingVertical: 3,
+    backgroundColor: colors.borderLight,
     paddingHorizontal: 6,
-    borderRadius: 5,
+    paddingVertical: 3,
+    borderRadius: 4,
   },
   dayChipText: {
     fontSize: 10,
@@ -499,13 +551,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
+    marginTop: 8,
   },
   lastRunText: {
     fontSize: 11,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
 });

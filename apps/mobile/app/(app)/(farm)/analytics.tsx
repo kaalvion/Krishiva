@@ -16,16 +16,15 @@ import {
   Layers,
   Calendar,
   Filter,
+  Database,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useDevices } from '../../../src/hooks/useDevices';
-import { useHeatmap } from '../../../src/hooks/useHeatmap';
-import { useHistory } from '../../../src/hooks/useHistory';
+import { ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveDevices, useLiveHeatmap, useDeviceHistory } from '../../../src/hooks/live';
 import { LineChart, type ChartDataPoint } from '../../../src/components/LineChart';
 import { Card } from '../../../src/components/Card';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { colors } from '../../../src/theme/colors';
-import type { Device } from '../../../src/types';
 
 type MetricType = 'soilMoisture' | 'temperature' | 'humidity';
 type RangeOption = 6 | 24 | 168;
@@ -39,32 +38,34 @@ export default function AnalyticsScreen() {
   const [selectedRange, setSelectedRange] = useState<RangeOption>(24);
   const [filterWithDataOnly, setFilterWithDataOnly] = useState<boolean>(false);
 
-  // Fetch devices
+  // Fetch devices live from Firestore
   const {
-    data: devices,
-    isLoading: devicesLoading,
-    refetch: refetchDevices,
-  } = useDevices(activeFarm?.id);
+    devices,
+    loading: devicesLoading,
+    refresh: refreshDevices,
+    fromCache: devicesFromCache,
+  } = useLiveDevices(activeFarm?.id);
 
-  // Fetch heatmap (for identifying devices with active readings)
+  // Fetch heatmap live (for identifying devices with active readings)
   const {
-    data: heatmapData,
-    refetch: refetchHeatmap,
-  } = useHeatmap(activeFarm?.id);
+    cells,
+    loading: heatmapLoading,
+    fromCache: heatmapFromCache,
+  } = useLiveHeatmap(activeFarm?.id);
 
   // Filter devices
   const availableDevices = useMemo(() => {
     if (!devices || devices.length === 0) return [];
-    if (!filterWithDataOnly || !heatmapData) return devices;
+    if (!filterWithDataOnly || cells.length === 0) return devices;
 
     const deviceIdsWithData = new Set(
-      heatmapData.cells
+      cells
         .filter((c) => c.soilMoisture !== null || c.temperature !== null || c.humidity !== null)
         .map((c) => c.deviceId)
     );
 
     return devices.filter((d) => deviceIdsWithData.has(d.id));
-  }, [devices, heatmapData, filterWithDataOnly]);
+  }, [devices, cells, filterWithDataOnly]);
 
   // Set default selected device once loaded
   const currentDeviceId = useMemo(() => {
@@ -74,33 +75,35 @@ export default function AnalyticsScreen() {
     return availableDevices.length > 0 ? availableDevices[0].id : null;
   }, [selectedDeviceId, availableDevices]);
 
-  // Query history for the selected device and range
+  // Query history directly from Firestore UTC daily buckets
   const {
-    data: historyData,
-    isLoading: historyLoading,
-    isError: historyError,
+    readings: historyReadings,
+    loading: historyLoading,
     error: historyErr,
+    fromCache: historyFromCache,
     refetch: refetchHistory,
-    isRefetching: historyRefetching,
-  } = useHistory(currentDeviceId ?? undefined, activeFarm?.id, selectedRange, {
-    enabled: Boolean(currentDeviceId) && Boolean(activeFarm?.id),
-  });
+  } = useDeviceHistory(currentDeviceId ?? undefined, activeFarm?.id, selectedRange);
+
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = async () => {
-    await Promise.all([refetchDevices(), refetchHeatmap(), refetchHistory()]);
+    setRefreshing(true);
+    refreshDevices();
+    await refetchHistory();
+    setRefreshing(false);
   };
 
   // Convert history readings to chart data points
   const chartData: ChartDataPoint[] = useMemo(() => {
-    if (!historyData?.readings) return [];
-    return historyData.readings
+    if (!historyReadings || historyReadings.length === 0) return [];
+    return historyReadings
       .filter((r) => r[selectedMetric] !== null && r[selectedMetric] !== undefined)
       .map((r) => ({
         x: new Date(r.recordedAt).getTime(),
         y: Number(r[selectedMetric]),
         recordedAt: r.recordedAt,
       }));
-  }, [historyData, selectedMetric]);
+  }, [historyReadings, selectedMetric]);
 
   if (!activeFarm) {
     return (
@@ -138,7 +141,8 @@ export default function AnalyticsScreen() {
     },
   }[selectedMetric];
 
-  const currentDevice = devices?.find((d) => d.id === currentDeviceId);
+  const currentDevice = devices.find((d) => d.id === currentDeviceId);
+  const isFromCache = historyFromCache || devicesFromCache || heatmapFromCache;
 
   return (
     <ScrollView
@@ -146,13 +150,24 @@ export default function AnalyticsScreen() {
       contentContainerStyle={styles.contentContainer}
       refreshControl={
         <RefreshControl
-          refreshing={historyRefetching}
+          refreshing={refreshing}
           onRefresh={handleRefresh}
           colors={[colors.primary]}
           tintColor={colors.primary}
         />
       }
     >
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+
+      {/* Showing Cached Data Banner if from cache */}
+      {isFromCache && (
+        <View style={styles.cacheBanner}>
+          <Database size={13} color={colors.textSecondary} />
+          <Text style={styles.cacheBannerText}>Showing saved offline data</Text>
+        </View>
+      )}
+
       {/* Device Selector Section */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Select Hardware Node</Text>
@@ -320,7 +335,7 @@ export default function AnalyticsScreen() {
         metricUnit={metricConfig.unit}
         lineColor={metricConfig.color}
         isLoading={historyLoading}
-        isError={historyError}
+        isError={Boolean(historyErr)}
         errorMessage={historyErr?.message}
         onRetry={refetchHistory}
       />
@@ -353,6 +368,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     backgroundColor: colors.background,
+  },
+  cacheBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  cacheBannerText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -450,7 +481,7 @@ const styles = StyleSheet.create({
   metricTabText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.textSecondary,
   },
   metricTabTextActive: {
     color: colors.textInverse,
@@ -460,13 +491,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
     marginBottom: 16,
+    paddingHorizontal: 2,
   },
   rangeLabelBlock: {
     flexDirection: 'row',
@@ -474,45 +500,50 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rangeLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  rangePills: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: 2,
+    gap: 2,
+  },
+  rangePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  rangePillActive: {
+    backgroundColor: colors.primary,
+  },
+  rangePillText: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
   },
-  rangePills: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  rangePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-    backgroundColor: colors.background,
-  },
-  rangePillActive: {
-    backgroundColor: colors.primaryDark,
-  },
-  rangePillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.textSecondary,
-  },
   rangePillTextActive: {
     color: colors.textInverse,
+    fontWeight: '700',
   },
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 2,
   },
   chartTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: colors.text,
   },
   chartSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
   },
@@ -522,13 +553,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   insightCard: {
-    padding: 14,
-    borderRadius: 12,
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: colors.primarySurface,
+    borderColor: '#C8E6C9',
   },
   insightTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.text,
+    color: colors.primaryDark,
     marginBottom: 4,
   },
   insightText: {

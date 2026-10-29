@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,16 @@ import {
   Clock,
   Cpu,
   Layers,
+  Database,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
+import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveAlerts } from '../../../src/hooks/live';
 import {
-  useAlerts,
   useAcknowledgeAlert,
   useAcknowledgeAll,
 } from '../../../src/hooks/useAlerts';
-import { useIsScreenFocused } from '../../../src/hooks/useIsScreenFocused';
 import { Card } from '../../../src/components/Card';
-import { Badge } from '../../../src/components/Badge';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
@@ -36,30 +36,36 @@ import type { AlertItem, AlertSeverity } from '../../../src/types';
 
 export default function AlertsScreen() {
   const { activeFarm } = useActiveFarm();
-  const isScreenFocused = useIsScreenFocused();
+  const { serverOnline } = useServerStatus();
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   const isOwnerOrAdmin = activeFarm?.role === 'owner' || activeFarm?.role === 'admin';
 
-  // Fetch alerts based on active tab
+  // Fetch alerts live directly from Firestore
   const isAcknowledged = activeTab === 'history';
   const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isRefetching,
-  } = useAlerts(activeFarm?.id, isAcknowledged, {
-    refetchInterval: isScreenFocused && !isAcknowledged ? 30000 : false,
-  });
+    alerts,
+    unacknowledgedCount,
+    loading: alertsLoading,
+    error: alertsErr,
+    fromCache,
+    refresh: refreshAlerts,
+  } = useLiveAlerts(activeFarm?.id, isAcknowledged);
 
   const acknowledgeAlertMutation = useAcknowledgeAlert(activeFarm?.id);
   const acknowledgeAllMutation = useAcknowledgeAll(activeFarm?.id);
 
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
 
+  const handleRefresh = async () => {
+    refreshAlerts();
+  };
+
   const handleAcknowledgeSingle = async (alertId: string) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     try {
       setAcknowledgingId(alertId);
       await acknowledgeAlertMutation.mutateAsync(alertId);
@@ -72,6 +78,10 @@ export default function AlertsScreen() {
   };
 
   const handleAcknowledgeAll = () => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     Alert.alert(
       'Acknowledge All Alerts',
       'Are you sure you want to mark all active alerts as acknowledged for this farm?',
@@ -93,9 +103,6 @@ export default function AlertsScreen() {
       ]
     );
   };
-
-  const alerts = data?.alerts ?? [];
-  const unacknowledgedCount = data?.unacknowledgedCount ?? 0;
 
   const getAlertTitle = (type: string): string => {
     switch (type) {
@@ -219,9 +226,9 @@ export default function AlertsScreen() {
           {/* Action button: only for owners/admins on unacknowledged alerts */}
           {!item.acknowledged && isOwnerOrAdmin && (
             <TouchableOpacity
-              style={styles.ackButton}
+              style={[styles.ackButton, !serverOnline && { opacity: 0.5 }]}
               onPress={() => handleAcknowledgeSingle(item.id)}
-              disabled={isAcking}
+              disabled={isAcking || !serverOnline}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Acknowledge alert"
@@ -266,6 +273,17 @@ export default function AlertsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+
+      {/* Showing Cached Data Banner if from cache */}
+      {fromCache && (
+        <View style={styles.cacheBanner}>
+          <Database size={13} color={colors.textSecondary} />
+          <Text style={styles.cacheBannerText}>Showing saved offline alerts</Text>
+        </View>
+      )}
+
       {/* Top Segmented Control */}
       <View style={styles.segmentContainer}>
         <View style={styles.segmentedControl}>
@@ -309,9 +327,9 @@ export default function AlertsScreen() {
         {/* Top Action: Acknowledge All for owners/admins when active alerts exist */}
         {activeTab === 'active' && isOwnerOrAdmin && alerts.length > 0 && (
           <TouchableOpacity
-            style={styles.ackAllButton}
+            style={[styles.ackAllButton, !serverOnline && { opacity: 0.5 }]}
             onPress={handleAcknowledgeAll}
-            disabled={acknowledgeAllMutation.isPending}
+            disabled={acknowledgeAllMutation.isPending || !serverOnline}
             activeOpacity={0.7}
           >
             {acknowledgeAllMutation.isPending ? (
@@ -327,12 +345,12 @@ export default function AlertsScreen() {
       </View>
 
       {/* Main Content */}
-      {isLoading ? (
+      {alertsLoading && alerts.length === 0 ? (
         <LoadingView label="Loading alerts..." />
-      ) : isError ? (
+      ) : alertsErr && alerts.length === 0 ? (
         <ErrorView
-          message={error instanceof Error ? error.message : 'Failed to load alerts'}
-          onRetry={refetch}
+          message={alertsErr instanceof Error ? alertsErr.message : 'Failed to load alerts'}
+          onRetry={handleRefresh}
         />
       ) : (
         <FlatList
@@ -345,8 +363,8 @@ export default function AlertsScreen() {
           ]}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={refetch}
+              refreshing={false}
+              onRefresh={handleRefresh}
               tintColor={colors.primary}
               colors={[colors.primary]}
             />
@@ -361,14 +379,12 @@ export default function AlertsScreen() {
                 )
               }
               title={
-                activeTab === 'active'
-                  ? 'No active alerts'
-                  : 'No alert history'
+                activeTab === 'active' ? 'All Clear!' : 'No Alert History'
               }
               description={
                 activeTab === 'active'
-                  ? 'All good! Sensors and devices are reporting within normal ranges.'
-                  : 'Acknowledged and resolved alerts will appear here.'
+                  ? 'There are no active alerts requiring your attention.'
+                  : 'No past alerts have been logged for this farm.'
               }
             />
           }
@@ -390,35 +406,48 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: colors.background,
   },
+  cacheBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  cacheBannerText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
   segmentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 10,
-    backgroundColor: colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: '#EEF2EE',
-    borderRadius: 8,
+    backgroundColor: colors.background,
+    borderRadius: 10,
     padding: 3,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
   },
   segmentButton: {
     paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 6,
+    paddingHorizontal: 16,
+    borderRadius: 8,
   },
   segmentButtonActive: {
-    backgroundColor: colors.card,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: colors.primary,
   },
   segmentText: {
     fontSize: 13,
@@ -426,7 +455,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   segmentTextActive: {
-    color: colors.primaryDark,
+    color: colors.textInverse,
     fontWeight: '700',
   },
   ackAllButton: {
@@ -434,9 +463,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 8,
     backgroundColor: colors.primarySurface,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
   },
   ackAllButtonText: {
     fontSize: 12,
@@ -452,28 +483,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   alertCard: {
-    padding: 14,
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 14,
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     flex: 1,
-    marginRight: 8,
   },
   iconBox: {
     width: 36,
     height: 36,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
   },
   titleColumn: {
     flex: 1,
@@ -482,40 +512,41 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 2,
   },
   deviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: 2,
   },
   deviceText: {
     fontSize: 12,
     color: colors.textMuted,
   },
   badgeColumn: {
-    alignItems: 'flex-end',
+    marginLeft: 8,
   },
   severityPill: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
   },
   severityPillText: {
     fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.5,
   },
   messageText: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: colors.text,
     lineHeight: 18,
     marginBottom: 12,
   },
   cardFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: colors.borderLight,
     paddingTop: 10,
@@ -536,10 +567,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
     backgroundColor: colors.primarySurface,
   },
   ackButtonText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: colors.primaryDark,
   },

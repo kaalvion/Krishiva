@@ -7,6 +7,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth, getFriendlyAuthErrorMessage } from '../services/firebase';
+import { clearUserCache } from '../services/snapshotCache';
 
 interface AuthContextType {
   user: User | null;
@@ -49,7 +50,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async (): Promise<void> => {
     try {
+      const currentUid = auth.currentUser?.uid;
       await firebaseSignOut(auth);
+      await clearUserCache(currentUid);
     } catch (err: unknown) {
       throw new Error(getFriendlyAuthErrorMessage(err));
     }

@@ -13,8 +13,9 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Check, PlusCircle } from 'lucide-react-native';
+import { Check, PlusCircle, CloudOff } from 'lucide-react-native';
 import { useCreateFarm } from '../../src/hooks/useFarms';
+import { useServerStatus, ServerStatusBanner } from '../../src/context/ServerStatusContext';
 import { Button } from '../../src/components/Button';
 import { Input } from '../../src/components/Input';
 import { colors } from '../../src/theme/colors';
@@ -52,6 +53,7 @@ type CreateFarmFormData = z.infer<typeof createFarmFormSchema>;
 
 export default function CreateFarmScreen() {
   const router = useRouter();
+  const { serverOnline } = useServerStatus();
   const createFarmMutation = useCreateFarm();
   const [selectedCrop, setSelectedCrop] = useState<string>('Wheat');
 
@@ -77,6 +79,13 @@ export default function CreateFarmScreen() {
   };
 
   const onSubmit = async (data: CreateFarmFormData) => {
+    if (!serverOnline) {
+      Alert.alert(
+        'Server Offline',
+        'Needs the server. Try again when it is back online.'
+      );
+      return;
+    }
     try {
       await createFarmMutation.mutateAsync({
         name: data.name.trim(),

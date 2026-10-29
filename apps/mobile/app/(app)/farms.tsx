@@ -19,8 +19,9 @@ import {
   Maximize2,
 } from 'lucide-react-native';
 import { useAuth } from '../../src/hooks/useAuth';
-import { useFarms } from '../../src/hooks/useFarms';
+import { useLiveFarms } from '../../src/hooks/live';
 import { useActiveFarm } from '../../src/context/FarmContext';
+import { useServerStatus, ServerStatusBanner } from '../../src/context/ServerStatusContext';
 import { Card } from '../../src/components/Card';
 import { Badge } from '../../src/components/Badge';
 import { ErrorView } from '../../src/components/ErrorView';
@@ -33,7 +34,26 @@ export default function FarmsScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { setActiveFarm } = useActiveFarm();
-  const { data: farms, isLoading, isError, error, refetch, isRefetching } = useFarms();
+  const { serverOnline } = useServerStatus();
+  const {
+    farms,
+    loading,
+    error,
+    fromCache,
+    lastSyncedAt,
+    refetch,
+  } = useLiveFarms();
+
+  const handleCreateFarmPress = () => {
+    if (!serverOnline) {
+      Alert.alert(
+        'Server Offline',
+        'Creating a farm requires the control server. Try again when it is back online.'
+      );
+      return;
+    }
+    router.push('/(app)/create-farm');
+  };
 
   const handleSignOut = () => {
     Alert.alert('Sign Out', 'Are you sure you want to log out of Krishiva?', [
@@ -115,7 +135,7 @@ export default function FarmsScreen() {
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.iconButton}
-            onPress={() => router.push('/(app)/create-farm')}
+            onPress={handleCreateFarmPress}
             accessibilityLabel="Create Farm"
           >
             <Plus size={22} color={colors.primaryDark} />
@@ -130,15 +150,28 @@ export default function FarmsScreen() {
         </View>
       </View>
 
+      <ServerStatusBanner />
+
+      {fromCache && (
+        <View style={styles.cacheNotice}>
+          <Text style={styles.cacheNoticeText}>
+            Showing saved data
+            {lastSyncedAt
+              ? ` • Last synced ${new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+              : ''}
+          </Text>
+        </View>
+      )}
+
       {/* Content */}
-      {isLoading ? (
+      {loading && farms.length === 0 ? (
         <LoadingView label="Fetching your farms..." />
-      ) : isError ? (
+      ) : error && farms.length === 0 ? (
         <ErrorView
           title="Could Not Load Farms"
-          message={error?.message || 'Failed to communicate with backend server.'}
-          onRetry={() => refetch()}
-          retrying={isRefetching}
+          message={error.message || 'Failed to load farms from Firestore.'}
+          onRetry={refetch}
+          retrying={loading}
         />
       ) : farms && farms.length > 0 ? (
         <FlatList
@@ -148,8 +181,8 @@ export default function FarmsScreen() {
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching}
-              onRefresh={() => refetch()}
+              refreshing={loading}
+              onRefresh={refetch}
               colors={[colors.primary]}
               tintColor={colors.primary}
             />
@@ -161,7 +194,7 @@ export default function FarmsScreen() {
           title="No Farms Found"
           description="You haven't created or been assigned to any farms yet. Register your first farm to start monitoring."
           actionTitle="Create Your First Farm"
-          onAction={() => router.push('/(app)/create-farm')}
+          onAction={handleCreateFarmPress}
         />
       )}
     </SafeAreaView>
@@ -277,5 +310,16 @@ const styles = StyleSheet.create({
   },
   arrowIcon: {
     marginLeft: 'auto',
+  },
+  cacheNotice: {
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    backgroundColor: '#E8F5E9',
+    alignItems: 'center',
+  },
+  cacheNoticeText: {
+    fontSize: 11,
+    color: '#2E7D32',
+    fontWeight: '600',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,11 +19,17 @@ import {
   Thermometer,
   CloudRain,
   Activity,
+  Database,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useDevices } from '../../../src/hooks/useDevices';
-import { useHeatmap } from '../../../src/hooks/useHeatmap';
-import { useIsScreenFocused } from '../../../src/hooks/useIsScreenFocused';
+import { ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveDevices, useLiveHeatmap } from '../../../src/hooks/live';
+import {
+  computeEffectiveStatus,
+  getReadingFreshness,
+  getAveragesStalenessNote,
+  formatInTimezone,
+} from '../../../src/utils/freshness';
 import { Card } from '../../../src/components/Card';
 import { Badge } from '../../../src/components/Badge';
 import { ErrorView } from '../../../src/components/ErrorView';
@@ -32,41 +38,33 @@ import { EmptyState } from '../../../src/components/EmptyState';
 import { FieldHeatmap } from '../../../src/components/FieldHeatmap';
 import { AlertBanner } from '../../../src/components/AlertBanner';
 import { colors } from '../../../src/theme/colors';
-import type { Device, HeatmapCell } from '../../../src/types';
+import type { Device } from '../../../src/types';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
-  const isScreenFocused = useIsScreenFocused();
 
-  // Queries refetch every 15s while screen is focused, pause when screen is not
   const {
-    data: devices,
-    isLoading: devicesLoading,
-    isError: devicesError,
+    devices,
+    loading: devicesLoading,
     error: devicesErr,
-    refetch: refetchDevices,
-    isRefetching: isRefetchingDevices,
-  } = useDevices(activeFarm?.id, {
-    refetchInterval: isScreenFocused ? 15000 : false,
-  });
+    fromCache: devicesFromCache,
+    refresh: refreshDevices,
+  } = useLiveDevices(activeFarm?.id);
 
   const {
-    data: heatmapData,
-    isLoading: heatmapLoading,
-    isError: heatmapError,
+    cells,
+    loading: heatmapLoading,
     error: heatmapErr,
-    refetch: refetchHeatmap,
-    isRefetching: isRefetchingHeatmap,
-  } = useHeatmap(activeFarm?.id, {
-    refetchInterval: isScreenFocused ? 15000 : false,
-  });
+    fromCache: heatmapFromCache,
+  } = useLiveHeatmap(activeFarm?.id);
 
-  const isRefreshing = isRefetchingDevices || isRefetchingHeatmap;
+  const isFromCache = devicesFromCache || heatmapFromCache;
+  const isRefreshing = false; // Firestore onSnapshot pushes live updates automatically
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([refetchDevices(), refetchHeatmap()]);
-  }, [refetchDevices, refetchHeatmap]);
+    refreshDevices();
+  }, [refreshDevices]);
 
   if (!activeFarm) {
     return (
@@ -82,9 +80,8 @@ export default function DashboardScreen() {
     );
   }
 
-  const cells: HeatmapCell[] = heatmapData?.cells ?? [];
-  const onlineCount = devices?.filter((d) => d.status === 'online').length ?? 0;
-  const totalCount = devices?.length ?? 0;
+  const onlineCount = devices.filter((d) => computeEffectiveStatus(d.lastSeenAt) === 'online').length;
+  const totalCount = devices.length;
   const offlineCount = Math.max(0, totalCount - onlineCount);
 
   // Compute sensor averages across devices that have data
@@ -123,39 +120,8 @@ export default function DashboardScreen() {
     .filter((t): t is string => Boolean(t))
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
   const latestRecordedAt = latestRecordedTimestamps[0] || null;
-
-  const formatLastUpdated = (timestamp: string | null) => {
-    if (!timestamp) return 'No data yet';
-    try {
-      const d = new Date(timestamp);
-      const diffMs = Date.now() - d.getTime();
-      if (diffMs < 30000) return 'Just now';
-      if (diffMs < 60000) return 'Less than a minute ago';
-      const mins = Math.floor(diffMs / 60000);
-      if (mins < 60) return `${mins}m ago`;
-      return (
-        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
-        ', ' +
-        d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-      );
-    } catch {
-      return timestamp;
-    }
-  };
-
-  const formatLastSeen = (timestamp?: string) => {
-    if (!timestamp) return 'Never';
-    try {
-      const date = new Date(timestamp);
-      return (
-        date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
-        ', ' +
-        date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-      );
-    } catch {
-      return timestamp;
-    }
-  };
+  const freshness = getReadingFreshness(latestRecordedAt);
+  const stalenessNote = getAveragesStalenessNote(cells);
 
   // Status color logic based on requirements:
   // Soil moisture: <=15 red "Critical", <=25 orange "Low", <=60 green "Good", above 60 blue "Wet"
@@ -187,7 +153,8 @@ export default function DashboardScreen() {
   const humidityBadge = getHumidityBadge(avgHumidity);
 
   const renderDeviceCard = ({ item }: { item: Device }) => {
-    const isOnline = item.status === 'online';
+    const effectiveStatus = computeEffectiveStatus(item.lastSeenAt);
+    const isOnline = effectiveStatus === 'online';
 
     return (
       <Card style={styles.deviceCard}>
@@ -211,8 +178,8 @@ export default function DashboardScreen() {
             </View>
           </View>
           <Badge
-            label={item.status}
-            variant={isOnline ? 'success' : 'neutral'}
+            label={effectiveStatus === 'never_reported' ? 'Never Seen' : effectiveStatus}
+            variant={isOnline ? 'success' : effectiveStatus === 'never_reported' ? 'neutral' : 'warning'}
           />
         </View>
 
@@ -231,7 +198,7 @@ export default function DashboardScreen() {
           <View style={styles.lastSeenRow}>
             <Clock size={12} color={colors.textMuted} />
             <Text style={styles.lastSeenText}>
-              Last seen: {formatLastSeen(item.lastSeenAt)}
+              Last seen: {formatInTimezone(item.lastSeenAt, activeFarm.timezone)}
             </Text>
           </View>
         </View>
@@ -241,6 +208,17 @@ export default function DashboardScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerBlock}>
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+
+      {/* Showing Cached Data Banner if from cache */}
+      {isFromCache && (
+        <View style={styles.cacheBanner}>
+          <Database size={13} color={colors.textSecondary} />
+          <Text style={styles.cacheBannerText}>Showing saved offline data</Text>
+        </View>
+      )}
+
       {/* Active Alerts Banner */}
       <AlertBanner farmId={activeFarm.id} />
 
@@ -287,10 +265,8 @@ export default function DashboardScreen() {
       {/* Live Telemetry Status Bar */}
       <View style={styles.telemetryStatusRow}>
         <View style={styles.telemetryTimeBlock}>
-          <Activity size={14} color={colors.primary} />
-          <Text style={styles.telemetryTimeText}>
-            Updated: {formatLastUpdated(latestRecordedAt)}
-          </Text>
+          <Activity size={14} color={freshness.isLive ? colors.online : colors.warning} />
+          <Text style={styles.telemetryTimeText}>{freshness.label}</Text>
         </View>
         <View style={styles.deviceStatusPills}>
           <View style={styles.statusPill}>
@@ -363,6 +339,13 @@ export default function DashboardScreen() {
         </Card>
       </View>
 
+      {/* Staleness Note for Sensor Summary */}
+      {stalenessNote && (
+        <View style={styles.stalenessContainer}>
+          <Text style={styles.stalenessText}>{stalenessNote}</Text>
+        </View>
+      )}
+
       {/* Field Heatmap */}
       <FieldHeatmap cells={cells} />
 
@@ -379,8 +362,8 @@ export default function DashboardScreen() {
     </View>
   );
 
-  const initialLoading = devicesLoading && heatmapLoading;
-  const hasError = devicesError && !devices;
+  const initialLoading = devicesLoading && heatmapLoading && devices.length === 0;
+  const hasError = devicesErr && devices.length === 0;
 
   return (
     <View style={styles.container}>
@@ -391,11 +374,11 @@ export default function DashboardScreen() {
           title="Could Not Load Dashboard"
           message={devicesErr?.message || heatmapErr?.message || 'Failed to fetch farm data.'}
           onRetry={handleRefresh}
-          retrying={isRefreshing}
+          retrying={false}
         />
       ) : (
         <FlatList
-          data={devices ?? []}
+          data={devices}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}
           renderItem={renderDeviceCard}
@@ -437,6 +420,22 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     marginBottom: 8,
+  },
+  cacheBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  cacheBannerText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   overviewCard: {
     backgroundColor: colors.primaryDark,
@@ -533,7 +532,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   sensorCard: {
     flex: 1,
@@ -572,6 +571,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textSecondary,
     fontWeight: '500',
+  },
+  stalenessContainer: {
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  stalenessText: {
+    fontSize: 11,
+    color: colors.warning,
+    fontStyle: 'italic',
   },
   sectionHeader: {
     flexDirection: 'row',

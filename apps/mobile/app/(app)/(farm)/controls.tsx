@@ -26,16 +26,17 @@ import {
   Droplets,
   Sun,
   BellRing,
+  Database,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useDevices } from '../../../src/hooks/useDevices';
-import { useFarmCommands } from '../../../src/hooks/useFarmCommands';
+import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveDevices, useRecentCommands } from '../../../src/hooks/live';
 import { useCommandStatus, useIssueCommand } from '../../../src/hooks/useCommand';
+import { formatInTimezone } from '../../../src/utils/freshness';
 import { ControlButton } from '../../../src/components/ControlButton';
 import { Card } from '../../../src/components/Card';
 import { Badge } from '../../../src/components/Badge';
 import { EmptyState } from '../../../src/components/EmptyState';
-import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { colors } from '../../../src/theme/colors';
 import type {
@@ -58,6 +59,7 @@ interface ActiveCommandTracker {
 export default function ControlsScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
+  const { serverOnline } = useServerStatus();
 
   // Active command in-flight tracking
   const [activeCommand, setActiveCommand] = useState<ActiveCommandTracker | null>(null);
@@ -69,23 +71,22 @@ export default function ControlsScreen() {
   // Error alert message state
   const [friendlyErrorMessage, setFriendlyErrorMessage] = useState<string | null>(null);
 
-  // Data fetching
+  // Live data fetching directly from Firestore
   const {
-    data: devices,
-    isLoading: devicesLoading,
-    isError: devicesError,
-    error: devicesErr,
-    refetch: refetchDevices,
-  } = useDevices(activeFarm?.id);
+    devices,
+    loading: devicesLoading,
+    refresh: refreshDevices,
+    fromCache: devicesFromCache,
+  } = useLiveDevices(activeFarm?.id);
 
   const {
-    data: recentCommands,
-    isLoading: commandsLoading,
-    refetch: refetchCommands,
-    isRefetching: commandsRefetching,
-  } = useFarmCommands(activeFarm?.id, 50);
+    commands: recentCommands,
+    loading: commandsLoading,
+    refresh: refreshCommands,
+    fromCache: commandsFromCache,
+  } = useRecentCommands(activeFarm?.id, devices);
 
-  // Mutation to issue commands
+  // Mutation to issue commands through backend API
   const issueCommandMutation = useIssueCommand();
 
   // Poll status of the currently active command
@@ -98,18 +99,17 @@ export default function ControlsScreen() {
     activeCommand?.deviceId,
     {
       maxPollSeconds: 40,
-      onSettled: (record) => {
-        // Automatically refresh recent commands list once command finishes
-        refetchCommands();
+      onSettled: () => {
+        refreshCommands();
       },
     }
   );
 
   const isViewer = activeFarm?.role === 'viewer';
+  const isFromCache = devicesFromCache || commandsFromCache;
 
   // Filter devices that have at least one actuator capability
   const actuatorDevices = useMemo(() => {
-    if (!devices) return [];
     return devices.filter((d) =>
       d.capabilities.some((c) =>
         ACTUATOR_CAPABILITIES.includes(c.toLowerCase() as (typeof ACTUATOR_CAPABILITIES)[number])
@@ -143,7 +143,8 @@ export default function ControlsScreen() {
   }
 
   const handleRefresh = async () => {
-    await Promise.all([refetchDevices(), refetchCommands()]);
+    refreshDevices();
+    refreshCommands();
   };
 
   const executeCommand = async (
@@ -151,6 +152,11 @@ export default function ControlsScreen() {
     action: ActuatorAction,
     durationSeconds?: number
   ) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
+
     if (isViewer) {
       setFriendlyErrorMessage('Only owners and admins can control devices.');
       return;
@@ -185,6 +191,11 @@ export default function ControlsScreen() {
   };
 
   const handleActionPress = (device: Device, action: ActuatorAction) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
+
     if (isViewer) {
       setFriendlyErrorMessage('Only owners and admins can control devices.');
       return;
@@ -214,6 +225,10 @@ export default function ControlsScreen() {
   };
 
   const handleConfirmPump = () => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     if (!pumpModalDevice) return;
     const dev = pumpModalDevice;
     const durationSeconds = selectedDurationMins * 60;
@@ -221,17 +236,8 @@ export default function ControlsScreen() {
     executeCommand(dev, 'PUMP_ON', durationSeconds);
   };
 
-  const formatCommandTime = (timeStr: string) => {
-    try {
-      const d = new Date(timeStr);
-      return (
-        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) +
-        ', ' +
-        d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-      );
-    } catch {
-      return timeStr;
-    }
+  const formatCommandTime = (timeStr?: string) => {
+    return formatInTimezone(timeStr, activeFarm.timezone);
   };
 
   const renderLiveStatusBanner = () => {
@@ -327,13 +333,24 @@ export default function ControlsScreen() {
       contentContainerStyle={styles.contentContainer}
       refreshControl={
         <RefreshControl
-          refreshing={commandsRefetching}
+          refreshing={false}
           onRefresh={handleRefresh}
           colors={[colors.primary]}
           tintColor={colors.primary}
         />
       }
     >
+      {/* Server Status Banner */}
+      <ServerStatusBanner />
+
+      {/* Showing Cached Data Banner if from cache */}
+      {isFromCache && (
+        <View style={styles.cacheBanner}>
+          <Database size={13} color={colors.textSecondary} />
+          <Text style={styles.cacheBannerText}>Showing saved offline data</Text>
+        </View>
+      )}
+
       {/* Viewer Permission Banner */}
       {isViewer && (
         <View style={styles.viewerBanner}>
@@ -369,7 +386,7 @@ export default function ControlsScreen() {
         </Text>
       </View>
 
-      {devicesLoading ? (
+      {devicesLoading && actuatorDevices.length === 0 ? (
         <LoadingView label="Loading actuator devices..." />
       ) : actuatorDevices.length === 0 ? (
         <Card style={styles.emptyCard}>
@@ -418,7 +435,7 @@ export default function ControlsScreen() {
 
                   const isThisDeviceActive =
                     isCommandInFlight && activeCommand?.deviceId === device.id;
-                  const disableButtons = isViewer || isCommandInFlight;
+                  const disableButtons = isViewer || isCommandInFlight || !serverOnline;
 
                   return (
                     <View key={cap} style={styles.capControlRow}>
@@ -465,21 +482,21 @@ export default function ControlsScreen() {
           <Text style={styles.sectionTitle}>Recent Commands</Text>
         </View>
         <Text style={styles.actuatorCountText}>
-          {recentCommands?.length ?? 0} dispatched
+          {recentCommands.length} dispatched
         </Text>
       </View>
 
       <Card style={styles.historyCard}>
-        {commandsLoading ? (
+        {commandsLoading && recentCommands.length === 0 ? (
           <LoadingView label="Loading recent commands..." />
-        ) : !recentCommands || recentCommands.length === 0 ? (
+        ) : recentCommands.length === 0 ? (
           <View style={styles.noCommandsContainer}>
             <Text style={styles.noCommandsText}>No actuator commands issued yet</Text>
           </View>
         ) : (
           recentCommands.slice(0, 15).map((cmd, idx) => {
             const isLast = idx === Math.min(recentCommands.length, 15) - 1;
-            const targetDev = devices?.find((d) => d.id === cmd.deviceId);
+            const targetDev = devices.find((d) => d.id === cmd.deviceId);
 
             let statusVariant: 'success' | 'warning' | 'danger' | 'neutral' = 'neutral';
             if (cmd.status === 'acknowledged') statusVariant = 'success';
@@ -620,6 +637,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     backgroundColor: colors.background,
+  },
+  cacheBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginBottom: 10,
+    alignSelf: 'flex-start',
+  },
+  cacheBannerText: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   viewerBanner: {
     flexDirection: 'row',

@@ -27,9 +27,9 @@ import {
   Calendar,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useDevices } from '../../../src/hooks/useDevices';
+import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useLiveDevices, useLiveSchedules } from '../../../src/hooks/live';
 import {
-  useSchedules,
   useCreateSchedule,
   useUpdateSchedule,
   useDeleteSchedule,
@@ -95,9 +95,10 @@ export default function ScheduleEditScreen() {
 
   const { activeFarm } = useActiveFarm();
   const farmId = activeFarm?.id;
+  const { serverOnline } = useServerStatus();
 
-  const { data: devices, isLoading: devicesLoading } = useDevices(farmId);
-  const { data: schedules } = useSchedules(farmId);
+  const { devices, loading: devicesLoading } = useLiveDevices(farmId);
+  const { schedules } = useLiveSchedules(farmId);
 
   const createScheduleMutation = useCreateSchedule(farmId);
   const updateScheduleMutation = useUpdateSchedule(farmId);
@@ -274,6 +275,10 @@ export default function ScheduleEditScreen() {
 
   // Delete schedule
   const handleDelete = () => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     if (!existingSchedule) return;
     Alert.alert(
       'Delete Schedule',
@@ -299,6 +304,10 @@ export default function ScheduleEditScreen() {
 
   // Form submit
   const onSubmit = async (formData: ScheduleFormData) => {
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
     if (!farmId) return;
 
     // Validate days
@@ -378,6 +387,9 @@ export default function ScheduleEditScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Server Status Banner */}
+        <ServerStatusBanner />
+
         {/* Farm Timezone Notice */}
         <View style={styles.timezoneBanner}>
           <Clock size={16} color={colors.primary} />
@@ -681,15 +693,15 @@ export default function ScheduleEditScreen() {
             title={isEditing ? 'Save Changes' : 'Create Schedule'}
             onPress={handleSubmit(onSubmit)}
             loading={isSubmitting}
-            disabled={actuatorDevices.length === 0}
+            disabled={actuatorDevices.length === 0 || !serverOnline}
             style={styles.submitButton}
           />
 
           {isEditing && (
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.deleteButton, !serverOnline && { opacity: 0.5 }]}
               onPress={handleDelete}
-              disabled={deleteScheduleMutation.isPending}
+              disabled={deleteScheduleMutation.isPending || !serverOnline}
               activeOpacity={0.7}
             >
               {deleteScheduleMutation.isPending ? (

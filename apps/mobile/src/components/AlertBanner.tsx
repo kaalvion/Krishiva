@@ -2,7 +2,7 @@ import React from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AlertTriangle, AlertCircle, ChevronRight } from 'lucide-react-native';
-import { useUnacknowledgedAlerts } from '../hooks/useAlerts';
+import { useLiveAlerts } from '../hooks/live';
 import { colors } from '../theme/colors';
 
 interface AlertBannerProps {
@@ -11,7 +11,8 @@ interface AlertBannerProps {
 
 export function AlertBanner({ farmId }: AlertBannerProps) {
   const router = useRouter();
-  const { unacknowledgedCount, hasCritical } = useUnacknowledgedAlerts(farmId);
+  const { alerts, unacknowledgedCount } = useLiveAlerts(farmId, false);
+  const hasCritical = alerts.some((a) => a.severity === 'critical');
 
   if (!unacknowledgedCount || unacknowledgedCount === 0) {
     return null;
@@ -67,30 +68,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   leftRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
     flex: 1,
   },
   iconWrapper: {
-    marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textContainer: {
     flex: 1,
   },
   title: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textSecondary,
+    marginTop: 1,
   },
 });

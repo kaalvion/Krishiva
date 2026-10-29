@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { AlertTriangle } from 'lucide-react-native';
 import { AuthProvider } from '../src/hooks/useAuth';
 import { FarmProvider } from '../src/context/FarmContext';
+import { ServerStatusProvider } from '../src/context/ServerStatusContext';
 import { getMissingEnvVars } from '../src/config/env';
 import { colors } from '../src/theme/colors';
 
@@ -58,10 +59,12 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <FarmProvider>
-            <StatusBar style="dark" />
-            <Stack screenOptions={{ headerShown: false }} />
-          </FarmProvider>
+          <ServerStatusProvider>
+            <FarmProvider>
+              <StatusBar style="dark" />
+              <Stack screenOptions={{ headerShown: false }} />
+            </FarmProvider>
+          </ServerStatusProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

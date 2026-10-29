@@ -10,13 +10,13 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useUnacknowledgedAlerts } from '../../../src/hooks/useAlerts';
+import { useLiveAlerts } from '../../../src/hooks/live';
 import { colors } from '../../../src/theme/colors';
 
 export default function FarmTabsLayout() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
-  const { unacknowledgedCount } = useUnacknowledgedAlerts(activeFarm?.id);
+  const { unacknowledgedCount } = useLiveAlerts(activeFarm?.id, false);
 
   const badgeValue =
     unacknowledgedCount > 0 ? (unacknowledgedCount > 9 ? '9+' : unacknowledgedCount) : undefined;
