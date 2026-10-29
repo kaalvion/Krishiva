@@ -1,32 +1,127 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny all client access
+
+    // ===============================================================
+    // Global Default Security Policy
+    // ===============================================================
+    // Deny all read and write operations by default.
+    // Client-side writes are strictly forbidden across the entire database;
+    // all mutations are handled exclusively by backend services using the Firebase Admin SDK.
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Users can read/write only their own user document
-    match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the request is authenticated with a valid Firebase ID token
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Farms are readable only by members or the owner
-    match /farms/{farmId} {
-      allow read: if request.auth != null && (
-        resource.data.ownerId == request.auth.uid ||
-        request.auth.uid in resource.data.members ||
-        resource.data.members[request.auth.uid] != null
-      );
-      allow write: if false; // Mutated only via server/admin SDK
+    // Check if the signed-in user has an active membership record in the specified farm
+    function isMember(farmId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/farms/$(farmId)/members/$(request.auth.uid));
+    }
 
-      // Farm subcollections (devices, telemetry)
-      match /{subcollection=**} {
-        allow read: if request.auth != null && (
-          get(/databases/$(database)/documents/farms/$(farmId)).data.ownerId == request.auth.uid ||
-          request.auth.uid in get(/databases/$(database)/documents/farms/$(farmId)).data.members
-        );
-        allow write: if false; // Telemetry ingested strictly via backend MQTT service
+    // Retrieve the membership role ('owner', 'admin', 'viewer') for the signed-in user
+    function memberRole(farmId) {
+      return get(/databases/$(database)/documents/farms/$(farmId)/members/$(request.auth.uid)).data.role;
+    }
+
+    // Check if the signed-in user is an owner or admin of the specified farm
+    function isOwnerOrAdmin(farmId) {
+      return isMember(farmId) && memberRole(farmId) in ['owner', 'admin'];
+    }
+
+    // ===============================================================
+    // User Profile Documents
+    // ===============================================================
+    match /users/{uid} {
+      // Users can only read their own profile; no client-side writes permitted
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ===============================================================
+    // Collection Group Queries
+    // ===============================================================
+    // Supports collectionGroup('members').where('userId', '==', request.auth.uid)
+    // Allows signed-in users to list and query ONLY their own memberships across all farms
+    match /{path=**}/members/{memberId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ===============================================================
+    // Farm Entities and Nested Subcollections
+    // ===============================================================
+    match /farms/{farmId} {
+      // Farm document metadata is readable only by active farm members
+      allow read: if isMember(farmId);
+      allow write: if false;
+
+      // -------------------------------------------------------------
+      // Farm Members
+      // -------------------------------------------------------------
+      match /members/{userId} {
+        // Individual member doc: a member can read their own document; owner/admin can read any member document
+        allow get: if isMember(farmId) && (request.auth.uid == userId || isOwnerOrAdmin(farmId));
+        // Listing members: strictly restricted to farm owners and admins
+        allow list: if isOwnerOrAdmin(farmId);
+        allow write: if false;
+      }
+
+      // -------------------------------------------------------------
+      // IoT Devices & Real-Time / Historical Telemetry
+      // -------------------------------------------------------------
+      match /devices/{deviceId} {
+        // Hardware device metadata readable by all farm members
+        allow read: if isMember(farmId);
+        allow write: if false;
+
+        // Current real-time telemetry snapshot singleton (/latest/current)
+        match /latest/{docId} {
+          allow read: if isMember(farmId);
+          allow write: if false;
+        }
+
+        // Daily partitioned time-series readings collections (e.g. readings_2026_10_29)
+        // Matches any subcollection whose name starts with 'readings_' followed by digits and underscores
+        match /{readingCollection}/{readingId} {
+          allow read: if isMember(farmId) && readingCollection.matches('^readings_[0-9_]+$');
+          allow write: if false;
+        }
+
+        // Actuator command records and audit history
+        match /commands/{commandId} {
+          allow read: if isMember(farmId);
+          allow write: if false;
+        }
+      }
+
+      // -------------------------------------------------------------
+      // Farm Operational Subcollections
+      // -------------------------------------------------------------
+      // Environmental alerts and incidents
+      match /alerts/{alertId} {
+        allow read: if isMember(farmId);
+        allow write: if false;
+      }
+
+      // Configured irrigation and device schedules
+      match /schedules/{scheduleId} {
+        allow read: if isMember(farmId);
+        allow write: if false;
+      }
+
+      // Audit logs of automated schedule runs: strictly internal, no client access
+      match /schedule_runs/{runId} {
+        allow read, write: if false;
       }
     }
   }

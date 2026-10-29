@@ -10,8 +10,13 @@
     "build": "npm --workspace=apps/backend run build",
     "start": "npm --workspace=apps/backend run start",
     "test": "npm --workspace=apps/backend run test",
+    "test:rules": "firebase emulators:exec --only firestore \"npx vitest run --config vitest.rules.config.ts\"",
     "token": "npm --workspace=apps/backend run token --",
     "admin": "npm --workspace=@krishiva/admin run dev",
     "admin:build": "npm --workspace=@krishiva/admin run build"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "vitest": "^4.1.12"
   }
 }

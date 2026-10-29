@@ -8,6 +8,11 @@ This guide covers setting up, running, and verifying Phase 1 (Foundation), Phase
 
 - **Node.js**: v20+ (`node -v`)
 - **npm**: v10+ (`npm -v`)
+- **Java Development Kit (JDK)**: **v21+ required** (`java -version`). Firebase CLI (v15+) requires Java 21 or above to run the Firestore Local Emulator Suite.
+  - **Check**: Run `java -version` in your terminal.
+  - **Windows Installation**: Run `winget install EclipseAdoptium.Temurin.21.jdk` in PowerShell or download from [Adoptium](https://adoptium.net/).
+  - **macOS Installation**: Run `brew install openjdk@21`
+  - **Linux (Ubuntu/Debian)**: Run `sudo apt update && sudo apt install -y openjdk-21-jdk-headless`
 - **Git** initialized
 - **Firebase Service Account**: Key file located at `secrets/firebase-admin.json`
 - **Firebase Web API Key**: Configured in `.env` as `FIREBASE_WEB_API_KEY` (needed for test token script)
@@ -486,6 +491,32 @@ $OfflineAlerts = Invoke-RestMethod -Uri "http://localhost:3000/api/farms/$FARM_I
 $OfflineAlerts.alerts | Where-Object { $_.type -eq "DEVICE_OFFLINE" } | ConvertTo-Json
 ```
 **Expected Output**: Stale device has `status: "offline"`, and an alert with `type: "DEVICE_OFFLINE"`, `severity: "warning"`, and `message: "<deviceName> has not reported for 15+ minutes"` exists. Running the detector again suppresses duplicate unacknowledged alerts.
+
+---
+
+## 13. Firestore Security Rules Testing & Deployment
+
+Client applications (Mobile App and Admin Console) communicate with Cloud Firestore using client SDKs bound to Firebase Security Rules (`firestore.rules`). The Fastify backend utilizes the Firebase Admin SDK (which bypasses security rules).
+
+### Prerequisites
+- **Java 21+**: Verify with `java -version`. Firebase CLI (v15+) requires JDK 21+ (`winget install EclipseAdoptium.Temurin.21.jdk` on Windows, or `brew install openjdk@21` on macOS).
+- **Firebase CLI**: `firebase-tools` (`npm install -g firebase-tools` or via `npx firebase`).
+
+### Running the Rules Test Suite
+Automated security rules tests are decoupled from standard backend unit tests and run against the Firestore Local Emulator:
+
+```powershell
+npm run test:rules
+```
+
+This starts the Firestore emulator on port 8080, runs the Vitest rules test suite (`test-rules/firestore.rules.test.ts`), and tears down the emulator cleanly upon completion.
+
+### Deploying Security Rules Only
+When ready to deploy updated rules to production without deploying full Firebase hosting or cloud functions:
+
+```powershell
+firebase deploy --only firestore:rules --project krishiva-be6a1
+```
 
 
 
