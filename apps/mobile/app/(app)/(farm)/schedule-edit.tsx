@@ -17,6 +17,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import DateTimePicker, {
   type DateTimePickerChangeEvent,
+  type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import {
   Clock,
@@ -241,7 +242,7 @@ export default function ScheduleEditScreen() {
     }
   };
 
-  // Time picker change handlers using the non-deprecated onValueChange & onDismiss
+  // Time picker change handlers
   const handleTimeValueChange = (_event: DateTimePickerChangeEvent, date: Date) => {
     if (Platform.OS === 'android') {
       setShowPicker(false);
@@ -252,6 +253,26 @@ export default function ScheduleEditScreen() {
       const m = String(date.getMinutes()).padStart(2, '0');
       setValue('time', `${h}:${m}`);
     }
+  };
+
+  const handleTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === 'android') {
+      setShowPicker(false);
+    }
+    if (date) {
+      setPickerDate(date);
+      const h = String(date.getHours()).padStart(2, '0');
+      const m = String(date.getMinutes()).padStart(2, '0');
+      setValue('time', `${h}:${m}`);
+    }
+  };
+
+  const applyPresetTime = (timeStr: string) => {
+    setValue('time', timeStr);
+    const [h, m] = timeStr.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h || 0, m || 0, 0, 0);
+    setPickerDate(d);
   };
 
   const handleTimeDismiss = () => {
@@ -501,7 +522,13 @@ export default function ScheduleEditScreen() {
           <Text style={styles.sectionLabel}>Execution Time</Text>
           <TouchableOpacity
             style={styles.timeCard}
-            onPress={() => setShowPicker(true)}
+            onPress={() => {
+              const [h, m] = (selectedTime || '06:00').split(':').map(Number);
+              const d = new Date();
+              d.setHours(h ?? 6, m ?? 0, 0, 0);
+              setPickerDate(d);
+              setShowPicker(true);
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.timeCardLeft}>
@@ -525,7 +552,10 @@ export default function ScheduleEditScreen() {
               mode="time"
               is24Hour={false}
               display="default"
+              themeVariant="light"
+              textColor="#111827"
               onValueChange={handleTimeValueChange}
+              onChange={handleTimeChange}
               onDismiss={handleTimeDismiss}
             />
           )}
@@ -535,7 +565,7 @@ export default function ScheduleEditScreen() {
             <Modal
               visible={showPicker}
               transparent
-              animationType="fade"
+              animationType="slide"
               onRequestClose={() => setShowPicker(false)}
             >
               <View style={styles.iosModalOverlay}>
@@ -549,14 +579,70 @@ export default function ScheduleEditScreen() {
                       <Text style={styles.iosDoneText}>Done</Text>
                     </TouchableOpacity>
                   </View>
-                  <DateTimePicker
-                    value={pickerDate}
-                    mode="time"
-                    is24Hour={false}
-                    display="spinner"
-                    onValueChange={handleTimeValueChange}
-                    onDismiss={handleTimeDismiss}
-                  />
+
+                  {/* Selected Time Banner */}
+                  <View style={styles.iosTimeBanner}>
+                    <Clock size={20} color={colors.primary} />
+                    <Text style={styles.iosTimeBannerText}>
+                      {formatTime12h(selectedTime)}
+                    </Text>
+                    <Text style={styles.iosTimeBannerSub}>
+                      ({selectedTime})
+                    </Text>
+                  </View>
+
+                  {/* Native iOS Picker */}
+                  <View style={styles.iosPickerContainer}>
+                    <DateTimePicker
+                      value={pickerDate}
+                      mode="time"
+                      is24Hour={false}
+                      display="spinner"
+                      themeVariant="light"
+                      textColor="#111827"
+                      style={styles.iosPicker}
+                      onValueChange={handleTimeValueChange}
+                      onChange={handleTimeChange}
+                      onDismiss={handleTimeDismiss}
+                    />
+                  </View>
+
+                  {/* Quick Preset Time Chips */}
+                  <View style={styles.quickTimeSection}>
+                    <Text style={styles.quickTimeTitle}>Quick Presets</Text>
+                    <View style={styles.quickTimeGrid}>
+                      {[
+                        { label: '6:00 AM', time: '06:00' },
+                        { label: '8:00 AM', time: '08:00' },
+                        { label: '12:00 PM', time: '12:00' },
+                        { label: '4:00 PM', time: '16:00' },
+                        { label: '6:00 PM', time: '18:00' },
+                        { label: '8:00 PM', time: '20:00' },
+                      ].map((preset) => {
+                        const isSelected = selectedTime === preset.time;
+                        return (
+                          <TouchableOpacity
+                            key={preset.time}
+                            style={[
+                              styles.quickTimePill,
+                              isSelected && styles.quickTimePillSelected,
+                            ]}
+                            onPress={() => applyPresetTime(preset.time)}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.quickTimePillText,
+                                isSelected && styles.quickTimePillTextSelected,
+                              ]}
+                            >
+                              {preset.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 </View>
               </View>
             </Modal>
@@ -1006,35 +1092,114 @@ const styles = StyleSheet.create({
   },
   iosModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   iosModalContent: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 24,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 32,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
   },
   iosModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.borderLight,
   },
   iosModalTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
-    color: colors.text,
+    color: '#111827',
   },
   iosDoneButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.primarySurface,
   },
   iosDoneText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.primaryDark,
+  },
+  iosTimeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    backgroundColor: colors.primarySurface,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 6,
+    borderRadius: 12,
+  },
+  iosTimeBannerText: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.primaryDark,
+  },
+  iosTimeBannerSub: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  iosPickerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    height: 190,
+    overflow: 'hidden',
+  },
+  iosPicker: {
+    height: 190,
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+  },
+  quickTimeSection: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+  },
+  quickTimeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  quickTimeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickTimePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  quickTimePillSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  quickTimePillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  quickTimePillTextSelected: {
+    color: colors.textInverse,
+    fontWeight: '700',
   },
 });
