@@ -116,7 +116,7 @@ export async function syncLegacyRelayCommand(
  * projects the live telemetry into the Krishiva v2 schema:
  * `farms/{farmId}/devices/{mac}/latest/current` and `readings_YYYY_MM_DD`.
  */
-export function startHardwareBridge(): void {
+export async function startHardwareBridge(): Promise<void> {
   if (slaveUnsubscribe || devicesUnsubscribe) {
     logger.debug('Hardware bridge is already running');
     return;
@@ -267,6 +267,23 @@ export function startHardwareBridge(): void {
       );
 
     logger.info('Real-Time Hardware Bridge active and listening for live ESP32 updates');
+
+    // Sync existing legacy schedules for all hardware farms on startup
+    try {
+      const hardwareFarmsSnap = await firestore().collectionGroup('MASTER').get();
+      const farmIds = new Set<string>();
+      for (const doc of hardwareFarmsSnap.docs) {
+        const parts = doc.ref.path.split('/');
+        if (parts[0] === 'farms') {
+          farmIds.add(parts[1]);
+        }
+      }
+      for (const fid of farmIds) {
+        await syncLegacySchedules(fid).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn({ err: e }, 'Failed initial sync of legacy schedules');
+    }
   } catch (err) {
     logger.error({ err }, 'Failed to initialize Hardware Bridge');
   }
@@ -283,4 +300,141 @@ export function stopHardwareBridge(): void {
   }
   logger.info('Hardware bridge stopped');
 }
+
+/**
+ * Synchronizes Krishiva schedules to physical ESP32 gateway MASTER/COMMANDS (SCHEDULES array).
+ */
+export async function syncLegacySchedules(farmId: string, targetDeviceId?: string): Promise<void> {
+  try {
+    let deviceIds: string[] = [];
+    if (targetDeviceId) {
+      deviceIds = [targetDeviceId];
+    } else {
+      const devicesSnap = await firestore().collection(`farms/${farmId}/DEVICES`).get();
+      deviceIds = devicesSnap.docs.map((d) => d.id);
+    }
+
+    if (deviceIds.length === 0) return;
+
+    // Get farm doc for timezone
+    const farmDoc = await firestore().doc(`farms/${farmId}`).get();
+    const timezone = farmDoc.data()?.timezone || 'Asia/Kolkata';
+
+    // Get all active schedules for this farm
+    const schedulesSnap = await firestore().collection(`farms/${farmId}/schedules`).get();
+    const allSchedules = schedulesSnap.docs.map((d) => d.data());
+
+    // Helper to format date YYYY-MM-DD
+    let todayStr: string;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      todayStr = formatter.format(new Date());
+    } catch {
+      const now = new Date();
+      todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    for (const devId of deviceIds) {
+      let masterCommandsRef = firestore().doc(`farms/${farmId}/DEVICES/${devId}/MASTER/COMMANDS`);
+      let masterSnap = await masterCommandsRef.get();
+
+      if (!masterSnap.exists) {
+        // Try searching under other devices
+        const allDevs = await firestore().collection(`farms/${farmId}/DEVICES`).get();
+        for (const candidate of allDevs.docs) {
+          const cRef = candidate.ref.collection('MASTER').doc('COMMANDS');
+          const cSnap = await cRef.get();
+          if (cSnap.exists) {
+            masterCommandsRef = cRef;
+            masterSnap = cSnap;
+            break;
+          }
+        }
+      }
+
+      if (!masterSnap.exists) continue;
+
+      const existingData = masterSnap.data() || {};
+      const currentHardwareSchedules: string[] = Array.isArray(existingData.SCHEDULES)
+        ? [...existingData.SCHEDULES]
+        : [];
+
+      // Filter schedules that belong to this device and are enabled
+      const deviceSchedules = allSchedules.filter(
+        (s) => s.deviceId === devId && s.enabled !== false
+      );
+
+      // Convert Krishiva schedules into hardware strings (e.g. "R1,2026-10-31,16:30,16:45,ONCE")
+      const activeStrings: string[] = deviceSchedules.map((s) => {
+        let relay = 'R1';
+        const act = String(s.action || '').toUpperCase();
+        if (act.includes('PUMP')) relay = 'R1';
+        else if (act.includes('VALVE')) relay = 'R2';
+        else if (act.includes('LIGHT')) relay = 'R3';
+        else if (act.includes('SIREN')) relay = 'R4';
+
+        const startTime = s.time;
+        const [hStr, mStr] = startTime.split(':');
+        const h = parseInt(hStr, 10) || 0;
+        const m = parseInt(mStr, 10) || 0;
+        const durationMins =
+          s.durationSeconds && s.durationSeconds > 0
+            ? Math.max(1, Math.round(s.durationSeconds / 60))
+            : 1;
+        const totalMins = h * 60 + m + durationMins;
+        const endH = Math.floor((totalMins / 60) % 24);
+        const endM = totalMins % 60;
+        const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+        const repeat = 'ONCE';
+
+        return `${relay},${todayStr},${startTime},${endTime},${repeat}`;
+      });
+
+      // Avoid duplicates for the same relay and start time
+      const activeRelayStarts = new Set(
+        activeStrings.map((str) => {
+          const parts = str.split(',');
+          return `${parts[0]}_${parts[2]}`;
+        })
+      );
+
+      const preservedOld = currentHardwareSchedules.filter((str) => {
+        const parts = str.split(',');
+        const key = `${parts[0]}_${parts[2]}`;
+        return !activeRelayStarts.has(key);
+      });
+
+      const finalSchedules = [...activeStrings, ...preservedOld];
+
+      await masterCommandsRef.set(
+        {
+          SCHEDULES: finalSchedules,
+        },
+        { merge: true }
+      );
+
+      // Also update SCHEDULES count on parent DEVICE doc
+      const devDocRef = firestore().doc(`farms/${farmId}/DEVICES/${devId}`);
+      await devDocRef.set(
+        {
+          SCHEDULES: finalSchedules.length,
+        },
+        { merge: true }
+      );
+
+      logger.info(
+        { farmId, devId, finalSchedules, count: finalSchedules.length },
+        'Successfully synced schedule to hardware MASTER/COMMANDS'
+      );
+    }
+  } catch (err) {
+    logger.error({ err, farmId, targetDeviceId }, 'Failed to sync schedules to legacy hardware');
+  }
+}
+
 

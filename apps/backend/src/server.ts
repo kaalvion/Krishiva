@@ -22,7 +22,7 @@ async function main() {
 
     // 4. Start scheduled cron jobs & real-time hardware bridge
     startScheduler();
-    startHardwareBridge();
+    await startHardwareBridge();
 
     // 5. Graceful shutdown listeners
     const shutdown = async (signal: string) => {

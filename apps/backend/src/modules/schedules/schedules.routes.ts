@@ -7,6 +7,7 @@ import {
   COMMAND_ACTIONS,
   type CommandAction,
 } from '../commands/commands.service.js';
+import { syncLegacySchedules } from '../bridge/hardware-bridge.service.js';
 
 export const createScheduleSchema = z.object({
   deviceId: z.string({ required_error: 'deviceId is required' }).min(1, 'deviceId cannot be empty'),
@@ -241,6 +242,7 @@ export const schedulesRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       await scheduleRef.set(scheduleData);
+      await syncLegacySchedules(farmId, deviceId).catch(() => {});
 
       return reply.status(201).send({ scheduleId });
     }
@@ -363,6 +365,7 @@ export const schedulesRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.action !== undefined) updates.action = body.action;
 
       await scheduleRef.update(updates);
+      await syncLegacySchedules(farmId, existing.deviceId).catch(() => {});
 
       return {
         id: scheduleId,
@@ -422,7 +425,9 @@ export const schedulesRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const existingData = snap.data();
       await scheduleRef.delete();
+      await syncLegacySchedules(farmId, existingData?.deviceId).catch(() => {});
       return reply.status(204).send();
     }
   );
