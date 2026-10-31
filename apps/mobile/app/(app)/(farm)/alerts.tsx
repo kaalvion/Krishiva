@@ -33,11 +33,13 @@ import { EmptyState } from '../../../src/components/EmptyState';
 import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { colors } from '../../../src/theme/colors';
+import { useLanguage } from '../../../src/context/LanguageContext';
 import type { AlertItem, AlertSeverity } from '../../../src/types';
 
 export default function AlertsScreen() {
   const { activeFarm } = useActiveFarm();
   const { serverOnline } = useServerStatus();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   const isOwnerOrAdmin = activeFarm?.role === 'owner' || activeFarm?.role === 'admin';
@@ -253,7 +255,7 @@ export default function AlertsScreen() {
               ) : (
                 <>
                   <Check size={14} color={colors.primary} />
-                  <Text style={styles.ackButtonText}>Acknowledge</Text>
+                  <Text style={styles.ackButtonText}>{t('alerts.acknowledge_btn')}</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -264,8 +266,8 @@ export default function AlertsScreen() {
               <CheckCheck size={14} color={colors.success} />
               <Text style={styles.resolvedText}>
                 {item.acknowledgedAt
-                  ? `Acknowledged ${formatRelativeTime(item.acknowledgedAt)}`
-                  : 'Acknowledged'}
+                  ? `${t('alerts.acknowledged')} ${formatRelativeTime(item.acknowledgedAt)}`
+                  : t('alerts.acknowledged')}
               </Text>
             </View>
           )}
@@ -295,7 +297,7 @@ export default function AlertsScreen() {
       {fromCache && (
         <View style={styles.cacheBanner}>
           <Database size={13} color={colors.textSecondary} />
-          <Text style={styles.cacheBannerText}>Showing saved offline alerts</Text>
+          <Text style={styles.cacheBannerText}>{t('common.showing_offline')}</Text>
         </View>
       )}
 
@@ -316,7 +318,7 @@ export default function AlertsScreen() {
                 activeTab === 'active' && styles.segmentTextActive,
               ]}
             >
-              Active {unacknowledgedCount > 0 ? `(${unacknowledgedCount})` : ''}
+              {t('alerts.active')} {unacknowledgedCount > 0 ? `(${unacknowledgedCount})` : ''}
             </Text>
           </TouchableOpacity>
 
@@ -334,7 +336,7 @@ export default function AlertsScreen() {
                 activeTab === 'history' && styles.segmentTextActive,
               ]}
             >
-              History
+              {t('alerts.acknowledged')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -352,7 +354,7 @@ export default function AlertsScreen() {
             ) : (
               <>
                 <CheckCheck size={16} color={colors.primary} />
-                <Text style={styles.ackAllButtonText}>Acknowledge all</Text>
+                <Text style={styles.ackAllButtonText}>{t('alerts.ack_all')}</Text>
               </>
             )}
           </TouchableOpacity>

@@ -5,6 +5,7 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -24,9 +25,12 @@ import {
   ShieldAlert,
   Sun,
   CheckCircle2,
+  Globe,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { ServerStatusBanner, useServerStatus } from '../../../src/context/ServerStatusContext';
+import { useLanguage } from '../../../src/context/LanguageContext';
+import { useTranslatedData } from '../../../src/hooks/useTranslatedData';
 import {
   useLiveDevices,
   useLiveHeatmap,
@@ -55,6 +59,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
   const { aiEnabled } = useServerStatus();
+  const { language, changeLanguage, t } = useLanguage();
 
   const {
     devices,
@@ -75,6 +80,10 @@ export default function DashboardScreen() {
   const { health, loading: healthLoading } = useLiveHealth(activeFarm?.id);
   const { weather, loading: weatherLoading } = useLiveWeather(activeFarm?.id);
   const { irrigation } = useLiveIrrigation(activeFarm?.id);
+
+  // Dynamic remote data translation (Tier 2 & 3)
+  const translatedDevices = useTranslatedData(devices);
+  const translatedBrief = useTranslatedData(brief);
 
   const isFromCache = devicesFromCache || heatmapFromCache;
   const isRefreshing = false; // Firestore onSnapshot pushes live updates automatically
@@ -257,6 +266,32 @@ export default function DashboardScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerBlock}>
+      {/* Language Selector Bar (Tier 1) */}
+      <View style={styles.langSelectorRow}>
+        <View style={styles.langLabelBlock}>
+          <Globe size={15} color={colors.primaryDark} />
+          <Text style={styles.langLabelText}>{t('common.language')}:</Text>
+        </View>
+        <View style={styles.langPills}>
+          {(['en', 'hi', 'mr'] as const).map((lang) => {
+            const isSelected = language === lang;
+            const label = lang === 'en' ? 'English' : lang === 'hi' ? 'हिंदी' : 'मराठी';
+            return (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.langPill, isSelected && styles.langPillActive]}
+                onPress={() => changeLanguage(lang)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.langPillText, isSelected && styles.langPillTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* Server Status Banner */}
       <ServerStatusBanner />
 
@@ -264,7 +299,7 @@ export default function DashboardScreen() {
       {isFromCache && (
         <View style={styles.cacheBanner}>
           <Database size={13} color={colors.textSecondary} />
-          <Text style={styles.cacheBannerText}>Showing saved offline data</Text>
+          <Text style={styles.cacheBannerText}>{t('common.showing_offline')}</Text>
         </View>
       )}
 
@@ -319,7 +354,7 @@ export default function DashboardScreen() {
               <View style={styles.aiIconBubble}>
                 <Sparkles size={16} color={colors.primary} />
               </View>
-              <Text style={styles.aiCardTitle}>Today's Farm Brief</Text>
+              <Text style={styles.aiCardTitle}>{t('dashboard.ai_insights')}</Text>
             </View>
             {brief && (
               <View style={[styles.urgencyBadge, { backgroundColor: urgencyBadge.bg }]}>
@@ -332,15 +367,15 @@ export default function DashboardScreen() {
 
           {brief ? (
             <View style={styles.briefContent}>
-              <Text style={styles.briefHeadline}>{brief.headline}</Text>
+              <Text style={styles.briefHeadline}>{translatedBrief?.headline || brief.headline}</Text>
               <Text style={styles.briefBody} numberOfLines={2}>
-                {brief.body}
+                {translatedBrief?.body || brief.body}
               </Text>
               {brief.actionNow && brief.actionNow !== 'null' && (
                 <View style={styles.briefActionRow}>
                   <CheckCircle2 size={14} color={colors.primary} />
                   <Text style={styles.briefActionText} numberOfLines={1}>
-                    {brief.actionNow}
+                    {translatedBrief?.actionNow || brief.actionNow}
                   </Text>
                 </View>
               )}
@@ -363,7 +398,7 @@ export default function DashboardScreen() {
             <View style={[styles.aiIconBubble, { backgroundColor: healthBg }]}>
               <Activity size={16} color={healthColor} />
             </View>
-            <Text style={styles.aiCardTitle}>Farm Health</Text>
+            <Text style={styles.aiCardTitle}>{t('dashboard.farm_health')}</Text>
           </View>
           <View style={[styles.urgencyBadge, { backgroundColor: healthBg }]}>
             <Text style={[styles.urgencyBadgeText, { color: healthColor }]}>
@@ -599,7 +634,7 @@ export default function DashboardScreen() {
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Wifi size={18} color={colors.primaryDark} />
-          <Text style={styles.sectionTitle}>Farm IoT Nodes</Text>
+          <Text style={styles.sectionTitle}>{t('dashboard.devices_sensors')}</Text>
         </View>
         <Text style={styles.deviceCountText}>
           {totalCount} {totalCount === 1 ? 'node' : 'nodes'}
@@ -624,7 +659,7 @@ export default function DashboardScreen() {
         />
       ) : (
         <FlatList
-          data={devices}
+          data={translatedDevices}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}
           renderItem={renderDeviceCard}
@@ -666,6 +701,58 @@ const styles = StyleSheet.create({
   },
   headerBlock: {
     marginBottom: 8,
+  },
+  langSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: colors.borderLight,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  langLabelBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  langLabelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  langPills: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  langPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  langPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  langPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  langPillTextActive: {
+    color: colors.textInverse,
+    fontWeight: '700',
   },
   cacheBanner: {
     flexDirection: 'row',

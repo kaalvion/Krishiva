@@ -8,6 +8,8 @@ import { AlertTriangle } from 'lucide-react-native';
 import { AuthProvider } from '../src/hooks/useAuth';
 import { FarmProvider } from '../src/context/FarmContext';
 import { ServerStatusProvider } from '../src/context/ServerStatusContext';
+import { LanguageProvider } from '../src/context/LanguageContext';
+import '../src/i18n/i18n';
 import { getMissingEnvVars } from '../src/config/env';
 import { colors } from '../src/theme/colors';
 
@@ -59,12 +61,14 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <ServerStatusProvider>
-            <FarmProvider>
-              <StatusBar style="dark" />
-              <Stack screenOptions={{ headerShown: false }} />
-            </FarmProvider>
-          </ServerStatusProvider>
+          <LanguageProvider>
+            <ServerStatusProvider>
+              <FarmProvider>
+                <StatusBar style="dark" />
+                <Stack screenOptions={{ headerShown: false }} />
+              </FarmProvider>
+            </ServerStatusProvider>
+          </LanguageProvider>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

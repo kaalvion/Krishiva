@@ -44,6 +44,7 @@ import { EmptyState } from '../../../src/components/EmptyState';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { colors } from '../../../src/theme/colors';
 import { sendHardwareMessage } from '../../../src/services/api';
+import { useLanguage } from '../../../src/context/LanguageContext';
 import type {
   Device,
   ActuatorAction,
@@ -65,6 +66,7 @@ export default function ControlsScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
   const { serverOnline } = useServerStatus();
+  const { t } = useLanguage();
 
   // Active command in-flight tracking
   const [activeCommand, setActiveCommand] = useState<ActiveCommandTracker | null>(null);
@@ -404,7 +406,7 @@ export default function ControlsScreen() {
       {isFromCache && (
         <View style={styles.cacheBanner}>
           <Database size={13} color={colors.textSecondary} />
-          <Text style={styles.cacheBannerText}>Showing saved offline data</Text>
+          <Text style={styles.cacheBannerText}>{t('common.showing_offline')}</Text>
         </View>
       )}
 
@@ -436,10 +438,10 @@ export default function ControlsScreen() {
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Power size={18} color={colors.primaryDark} />
-          <Text style={styles.sectionTitle}>Remote Actuators</Text>
+          <Text style={styles.sectionTitle}>{t('controls.title')}</Text>
         </View>
         <Text style={styles.actuatorCountText}>
-          {actuatorDevices.length} available
+          {actuatorDevices.length} {t('controls.available')}
         </Text>
       </View>
 
@@ -449,8 +451,8 @@ export default function ControlsScreen() {
         <Card style={styles.emptyCard}>
           <EmptyState
             icon={<Sliders size={32} color={colors.textSecondary} />}
-            title="No Actuators Configured"
-            description="None of your registered devices have pump, valve, light, or siren capabilities."
+            title={t('controls.no_actuators')}
+            description={t('controls.no_actuators_desc')}
           />
         </Card>
       ) : (
@@ -541,9 +543,9 @@ export default function ControlsScreen() {
                 <MessageSquare size={18} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.instantMessageTitle}>Hardware Direct Message / Command</Text>
+                <Text style={styles.instantMessageTitle}>{t('controls.hardware_direct')}</Text>
                 <Text style={styles.instantMessageSubtitle}>
-                  Target Gateway: {activeMessageDevice.name} ({activeMessageDevice.id})
+                  {t('controls.target_gateway')}: {activeMessageDevice.name} ({activeMessageDevice.id})
                 </Text>
               </View>
             </View>
@@ -551,7 +553,7 @@ export default function ControlsScreen() {
 
           {/* Quick preset action buttons */}
           <View style={styles.quickActionsContainer}>
-            <Text style={styles.quickActionsLabel}>Quick Overrides:</Text>
+            <Text style={styles.quickActionsLabel}>{t('controls.quick_overrides')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -646,10 +648,10 @@ export default function ControlsScreen() {
       <View style={[styles.sectionHeader, { marginTop: 20 }]}>
         <View style={styles.sectionTitleRow}>
           <Clock size={18} color={colors.primaryDark} />
-          <Text style={styles.sectionTitle}>Recent Commands</Text>
+          <Text style={styles.sectionTitle}>{t('controls.recent_commands')}</Text>
         </View>
         <Text style={styles.actuatorCountText}>
-          {recentCommands.length} dispatched
+          {recentCommands.length} {t('controls.dispatched')}
         </Text>
       </View>
 
@@ -658,7 +660,7 @@ export default function ControlsScreen() {
           <LoadingView label="Loading recent commands..." />
         ) : recentCommands.length === 0 ? (
           <View style={styles.noCommandsContainer}>
-            <Text style={styles.noCommandsText}>No actuator commands issued yet</Text>
+            <Text style={styles.noCommandsText}>{t('controls.no_commands')}</Text>
           </View>
         ) : (
           recentCommands.slice(0, 15).map((cmd, idx) => {
@@ -720,7 +722,7 @@ export default function ControlsScreen() {
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
                 <Droplets size={22} color={colors.primary} />
-                <Text style={styles.modalTitle}>Irrigation Pump Control</Text>
+                <Text style={styles.modalTitle}>{t('controls.pump_control')}</Text>
               </View>
               <TouchableOpacity onPress={() => setPumpModalDevice(null)}>
                 <X size={20} color={colors.textSecondary} />
@@ -732,7 +734,7 @@ export default function ControlsScreen() {
             </Text>
 
             <Text style={styles.durationPrompt}>
-              Select runtime duration before starting:
+              {t('controls.select_duration')}
             </Text>
 
             {/* Duration choice chips */}
@@ -754,7 +756,7 @@ export default function ControlsScreen() {
                         isSelected && styles.durationPillTextActive,
                       ]}
                     >
-                      {mins === 0 ? 'Instant' : `${mins}m`}
+                      {mins === 0 ? t('controls.instant') : `${mins}m`}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -780,14 +782,14 @@ export default function ControlsScreen() {
                 style={styles.cancelModalBtn}
                 onPress={() => setPumpModalDevice(null)}
               >
-                <Text style={styles.cancelModalBtnText}>Cancel</Text>
+                <Text style={styles.cancelModalBtnText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.startPumpBtn}
                 onPress={handleConfirmPump}
               >
-                <Text style={styles.startPumpBtnText}>Confirm & Start Pump</Text>
+                <Text style={styles.startPumpBtnText}>{t('controls.confirm_pump')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
