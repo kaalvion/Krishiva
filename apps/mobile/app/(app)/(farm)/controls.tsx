@@ -9,6 +9,8 @@ import {
   Pressable,
   RefreshControl,
   Alert,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -27,6 +29,8 @@ import {
   Sun,
   BellRing,
   Database,
+  Send,
+  MessageSquare,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
@@ -39,6 +43,7 @@ import { Badge } from '../../../src/components/Badge';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { colors } from '../../../src/theme/colors';
+import { sendHardwareMessage } from '../../../src/services/api';
 import type {
   Device,
   ActuatorAction,
@@ -67,6 +72,12 @@ export default function ControlsScreen() {
   // Pump ON modal state
   const [pumpModalDevice, setPumpModalDevice] = useState<Device | null>(null);
   const [selectedDurationMins, setSelectedDurationMins] = useState<number>(15);
+
+  // Instant message & direct hardware command state
+  const [instantMessage, setInstantMessage] = useState<string>('');
+  const [isSendingMessage, setIsSendingMessage] = useState<boolean>(false);
+  const [messageFeedback, setMessageFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [selectedMessageDeviceId, setSelectedMessageDeviceId] = useState<string | null>(null);
 
   // Error alert message state
   const [friendlyErrorMessage, setFriendlyErrorMessage] = useState<string | null>(null);
@@ -116,6 +127,14 @@ export default function ControlsScreen() {
       )
     );
   }, [devices]);
+
+  // Selected device for hardware message/command dispatch
+  const activeMessageDevice = useMemo(() => {
+    if (selectedMessageDeviceId) {
+      return devices.find((d) => d.id === selectedMessageDeviceId) || devices[0];
+    }
+    return actuatorDevices[0] || devices[0];
+  }, [devices, actuatorDevices, selectedMessageDeviceId]);
 
   // Determine if a command is currently in flight
   const isCommandInFlight = useMemo(() => {
@@ -231,9 +250,47 @@ export default function ControlsScreen() {
     }
     if (!pumpModalDevice) return;
     const dev = pumpModalDevice;
-    const durationSeconds = selectedDurationMins * 60;
+    const durationSeconds = selectedDurationMins === 0 ? undefined : selectedDurationMins * 60;
     setPumpModalDevice(null);
     executeCommand(dev, 'PUMP_ON', durationSeconds);
+  };
+
+  const handleSendHardwareMessage = async (customText?: string) => {
+    const msgToSend = (customText !== undefined ? customText : instantMessage).trim();
+    if (!msgToSend) return;
+    if (!activeFarm || !activeMessageDevice) {
+      Alert.alert('No Device', 'No active device available to send commands.');
+      return;
+    }
+    if (!serverOnline) {
+      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+      return;
+    }
+    if (isViewer) {
+      setFriendlyErrorMessage('Only owners and admins can send hardware commands.');
+      return;
+    }
+
+    setIsSendingMessage(true);
+    setMessageFeedback(null);
+    try {
+      await sendHardwareMessage(activeFarm.id, activeMessageDevice.id, msgToSend);
+      setMessageFeedback({
+        type: 'success',
+        text: `Command "${msgToSend}" dispatched to ${activeMessageDevice.name}!`,
+      });
+      if (customText === undefined) {
+        setInstantMessage('');
+      }
+      refreshCommands();
+    } catch (err: any) {
+      setMessageFeedback({
+        type: 'error',
+        text: err.message || 'Failed to dispatch message to hardware.',
+      });
+    } finally {
+      setIsSendingMessage(false);
+    }
   };
 
   const formatCommandTime = (timeStr?: string) => {
@@ -475,6 +532,116 @@ export default function ControlsScreen() {
         })
       )}
 
+      {/* Hardware Instant Message & Direct Command Section */}
+      {activeMessageDevice && (
+        <Card style={styles.instantMessageCard}>
+          <View style={styles.instantMessageHeader}>
+            <View style={styles.instantMessageTitleRow}>
+              <View style={styles.messageIconCircle}>
+                <MessageSquare size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.instantMessageTitle}>Hardware Direct Message / Command</Text>
+                <Text style={styles.instantMessageSubtitle}>
+                  Target Gateway: {activeMessageDevice.name} ({activeMessageDevice.id})
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Quick preset action buttons */}
+          <View style={styles.quickActionsContainer}>
+            <Text style={styles.quickActionsLabel}>Quick Overrides:</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.quickChipsRow}
+            >
+              {[
+                { label: 'Pump ON', cmd: 'PUMP:ON' },
+                { label: 'Pump OFF', cmd: 'PUMP:OFF' },
+                { label: 'Valve ON', cmd: 'VALVE:ON' },
+                { label: 'Valve OFF', cmd: 'VALVE:OFF' },
+                { label: 'Light ON', cmd: 'LIGHT:ON' },
+                { label: 'Light OFF', cmd: 'LIGHT:OFF' },
+                { label: 'Siren ON', cmd: 'SIREN:ON' },
+                { label: 'Siren OFF', cmd: 'SIREN:OFF' },
+                { label: 'AUTO: true', cmd: 'AUTO:true' },
+                { label: 'AUTO: false', cmd: 'AUTO:false' },
+                { label: 'STATUS', cmd: 'STATUS' },
+              ].map((chip) => (
+                <TouchableOpacity
+                  key={chip.cmd}
+                  style={styles.quickChip}
+                  disabled={isSendingMessage || isViewer || !serverOnline}
+                  onPress={() => handleSendHardwareMessage(chip.cmd)}
+                >
+                  <Text style={styles.quickChipText}>{chip.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Custom text input & send button */}
+          <View style={styles.messageInputRow}>
+            <TextInput
+              style={styles.messageTextInput}
+              placeholder="e.g. RELAY1:ON, AUTO:false, PING..."
+              placeholderTextColor={colors.textMuted}
+              value={instantMessage}
+              onChangeText={setInstantMessage}
+              editable={!isSendingMessage && !isViewer && serverOnline}
+              returnKeyType="send"
+              onSubmitEditing={() => handleSendHardwareMessage()}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendMessageBtn,
+                (!instantMessage.trim() || isSendingMessage || isViewer || !serverOnline) &&
+                  styles.sendMessageBtnDisabled,
+              ]}
+              disabled={!instantMessage.trim() || isSendingMessage || isViewer || !serverOnline}
+              onPress={() => handleSendHardwareMessage()}
+            >
+              {isSendingMessage ? (
+                <ActivityIndicator size="small" color={colors.textInverse} />
+              ) : (
+                <Send size={16} color={colors.textInverse} />
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Message feedback alert */}
+          {messageFeedback && (
+            <View
+              style={[
+                styles.feedbackBox,
+                messageFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
+              ]}
+            >
+              {messageFeedback.type === 'success' ? (
+                <CheckCircle2 size={15} color="#2E7D32" />
+              ) : (
+                <AlertCircle size={15} color={colors.error} />
+              )}
+              <Text
+                style={[
+                  styles.feedbackText,
+                  messageFeedback.type === 'success'
+                    ? styles.feedbackTextSuccess
+                    : styles.feedbackTextError,
+                ]}
+              >
+                {messageFeedback.text}
+              </Text>
+              <TouchableOpacity onPress={() => setMessageFeedback(null)}>
+                <X size={14} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </Card>
+      )}
+
       {/* Recent Commands History Section */}
       <View style={[styles.sectionHeader, { marginTop: 20 }]}>
         <View style={styles.sectionTitleRow}>
@@ -570,7 +737,7 @@ export default function ControlsScreen() {
 
             {/* Duration choice chips */}
             <View style={styles.durationPillsRow}>
-              {[5, 15, 30, 60].map((mins) => {
+              {[0, 5, 15, 30, 60].map((mins) => {
                 const isSelected = selectedDurationMins === mins;
                 return (
                   <TouchableOpacity
@@ -587,7 +754,7 @@ export default function ControlsScreen() {
                         isSelected && styles.durationPillTextActive,
                       ]}
                     >
-                      {mins} mins
+                      {mins === 0 ? 'Instant' : `${mins}m`}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -596,10 +763,16 @@ export default function ControlsScreen() {
 
             <View style={styles.confirmBox}>
               <Text style={styles.confirmQuestion}>Are you sure?</Text>
-              <Text style={styles.confirmDesc}>
-                This will dispatch a PUMP_ON command with duration of{' '}
-                {selectedDurationMins} minutes ({selectedDurationMins * 60} seconds).
-              </Text>
+              {selectedDurationMins === 0 ? (
+                <Text style={styles.confirmDesc}>
+                  This will dispatch an instant PUMP_ON command with continuous runtime without an auto-off timer.
+                </Text>
+              ) : (
+                <Text style={styles.confirmDesc}>
+                  This will dispatch a PUMP_ON command with duration of{' '}
+                  {selectedDurationMins} minutes ({selectedDurationMins * 60} seconds).
+                </Text>
+              )}
             </View>
 
             <View style={styles.modalActionButtons}>
@@ -991,5 +1164,120 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.textInverse,
+  },
+  instantMessageCard: {
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  instantMessageHeader: {
+    marginBottom: 12,
+  },
+  instantMessageTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  messageIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: colors.primarySurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  instantMessageTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  instantMessageSubtitle: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  quickActionsContainer: {
+    marginBottom: 12,
+  },
+  quickActionsLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  quickChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  quickChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  messageInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  messageTextInput: {
+    flex: 1,
+    height: 42,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    fontSize: 13,
+    color: colors.text,
+  },
+  sendMessageBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendMessageBtnDisabled: {
+    backgroundColor: colors.textMuted,
+    opacity: 0.6,
+  },
+  feedbackBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  feedbackSuccess: {
+    backgroundColor: '#E8F5E9',
+  },
+  feedbackError: {
+    backgroundColor: '#FFEBEE',
+  },
+  feedbackText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  feedbackTextSuccess: {
+    color: '#2E7D32',
+  },
+  feedbackTextError: {
+    color: colors.error,
   },
 });

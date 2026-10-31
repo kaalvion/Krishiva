@@ -327,6 +327,110 @@ export const commandsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
   );
+
+  /**
+   * POST /api/farms/:farmId/devices/:deviceId/message
+   * Sends an instant message or direct command to the hardware gateway / actuator.
+   */
+  fastify.post<{
+    Params: { farmId: string; deviceId: string };
+    Body: { message: string };
+  }>(
+    '/farms/:farmId/devices/:deviceId/message',
+    {
+      schema: {
+        tags: ['Commands'],
+        summary: 'Send instant message to hardware',
+        description: 'Sends an instant message/command directly to the master hardware gateway',
+        security: [{ BearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['farmId', 'deviceId'],
+          properties: {
+            farmId: { type: 'string' },
+            deviceId: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['message'],
+          properties: {
+            message: { type: 'string', minLength: 1, maxLength: 500 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              sentAt: { type: 'string' },
+            },
+            additionalProperties: true,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const uid = request.user?.uid;
+      if (!uid) {
+        throw new HttpError(401, 'Unauthorized');
+      }
+
+      const { farmId, deviceId } = request.params;
+      const { message } = request.body;
+
+      await requireFarmMember(farmId, uid, 'admin');
+
+      const now = new Date().toISOString();
+
+      // 1. Update legacy MASTER/COMMANDS if exists
+      let masterCommandsRef = firestore().doc(`farms/${farmId}/DEVICES/${deviceId}/MASTER/COMMANDS`);
+      let masterSnap = await masterCommandsRef.get();
+
+      if (!masterSnap.exists) {
+        const devicesSnap = await firestore().collection(`farms/${farmId}/DEVICES`).get();
+        for (const d of devicesSnap.docs) {
+          const candidateRef = d.ref.collection('MASTER').doc('COMMANDS');
+          const candidateSnap = await candidateRef.get();
+          if (candidateSnap.exists) {
+            masterCommandsRef = candidateRef;
+            masterSnap = candidateSnap;
+            break;
+          }
+        }
+      }
+
+      if (masterSnap.exists) {
+        await masterCommandsRef.update({
+          MESSAGE: message,
+          MESSAGE_AT: now,
+          MESSAGE_SOURCE: 'APP',
+        });
+      }
+
+      // 2. Also log as a command in v2 schema
+      const cmdId = `msg-${Date.now()}`;
+      await firestore().doc(`farms/${farmId}/devices/${deviceId}/commands/${cmdId}`).set({
+        id: cmdId,
+        commandId: cmdId,
+        farmId,
+        deviceId,
+        action: `MESSAGE: ${message}`,
+        status: 'acknowledged',
+        requestedBy: uid,
+        source: 'mobile',
+        createdAt: now,
+        acknowledgedAt: now,
+      });
+
+      return reply.code(200).send({
+        success: true,
+        message,
+        sentAt: now,
+      });
+    }
+  );
 };
 
 export default commandsRoutes;

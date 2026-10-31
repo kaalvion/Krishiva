@@ -305,3 +305,20 @@ export async function acknowledgeAllAlerts(
   });
 }
 
+/**
+ * Sends an instant message or direct command to the hardware gateway / actuator.
+ */
+export async function sendHardwareMessage(
+  farmId: string,
+  deviceId: string,
+  message: string
+): Promise<{ success: boolean; message: string; sentAt: string }> {
+  return request<{ success: boolean; message: string; sentAt: string }>(
+    `/api/farms/${encodeURIComponent(farmId)}/devices/${encodeURIComponent(deviceId)}/message`,
+    {
+      method: 'POST',
+      body: { message },
+    }
+  );
+}
+
