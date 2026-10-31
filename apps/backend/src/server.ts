@@ -4,6 +4,7 @@ import { initFirebase } from './plugins/firebase.js';
 import { buildApp } from './app.js';
 import { initMqtt, closeMqtt } from './plugins/mqtt.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
+import { startHardwareBridge, stopHardwareBridge } from './modules/bridge/hardware-bridge.service.js';
 
 async function main() {
   try {
@@ -19,12 +20,14 @@ async function main() {
     // 3. Connect to EMQX MQTT Broker & subscribe to topics
     initMqtt();
 
-    // 4. Start scheduled cron jobs
+    // 4. Start scheduled cron jobs & real-time hardware bridge
     startScheduler();
+    startHardwareBridge();
 
     // 5. Graceful shutdown listeners
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Graceful shutdown initiated');
+      stopHardwareBridge();
       stopScheduler();
       await closeMqtt();
       await app.close();

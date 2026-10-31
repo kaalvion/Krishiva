@@ -1,6 +1,7 @@
 import { firestore } from '../../plugins/firebase.js';
 import { logger } from '../../utils/logger.js';
 import { publishCommand } from '../../plugins/mqtt.js';
+import { syncLegacyRelayCommand } from '../bridge/hardware-bridge.service.js';
 
 export const COMMAND_TIMEOUT_MS = 30000;
 
@@ -138,6 +139,9 @@ export async function issueCommand(params: IssueCommandParams): Promise<{
       status: 'published',
       publishedAt,
     });
+
+    // Sync to legacy hardware relays (MASTER/COMMANDS) if device is an ESP32 GSM gateway
+    await syncLegacyRelayCommand(farmId, deviceId, action, commandId, durationSeconds);
 
     // 3. Start 30-second timeout: if still "published" after 30s, set status "expired"
     const timer = setTimeout(async () => {

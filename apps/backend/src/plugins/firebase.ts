@@ -11,6 +11,11 @@ export function initFirebase(): admin.app.App {
     return appInstance;
   }
 
+  if (admin.apps.length > 0) {
+    appInstance = admin.app();
+    return appInstance;
+  }
+
   // Resolve service account path robustly
   const candidatePaths = [
     path.resolve(process.cwd(), env.FIREBASE_SERVICE_ACCOUNT_PATH),
