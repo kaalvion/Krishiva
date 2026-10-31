@@ -143,3 +143,4 @@ export async function translateText(
   // Graceful fallback to original text if both services fail
   return text;
 }
+

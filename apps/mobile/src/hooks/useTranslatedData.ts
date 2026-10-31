@@ -97,3 +97,4 @@ export function useTranslatedData<T>(data: T): T {
 
   return language === 'en' ? data : translatedData;
 }
+
