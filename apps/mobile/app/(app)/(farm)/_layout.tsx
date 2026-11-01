@@ -86,8 +86,8 @@ export default function FarmTabsLayout() {
       <Tabs.Screen
         name="controls"
         options={{
+          headerShown: false,
           title: 'Controls',
-          headerTitle: 'Actuator Controls',
           tabBarIcon: ({ color, size }) => <Sliders size={size} color={color} />,
         }}
       />

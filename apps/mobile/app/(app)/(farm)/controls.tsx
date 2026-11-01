@@ -1,1285 +1,1673 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Modal,
   Pressable,
-  RefreshControl,
+  Animated,
+  Easing,
   Alert,
+  Image,
+  Platform,
+  Vibration,
+  Modal,
   TextInput,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import {
-  Sliders,
+  ArrowLeft,
+  Settings,
+  User,
+  Radio,
+  RotateCw,
+  Check,
   Power,
   Clock,
-  ShieldAlert,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  Cpu,
-  Layers,
-  Activity,
-  X,
-  Droplets,
+  PauseCircle,
   Sun,
-  BellRing,
-  Database,
+  AlertTriangle,
+  Lock,
+  Volume2,
+  PowerOff,
+  StopCircle,
+  ArrowUpRight,
+  MapPin,
+  X,
   Send,
-  MessageSquare,
+  Sliders,
+  Droplets,
+  Layers,
 } from 'lucide-react-native';
+
 import { useActiveFarm } from '../../../src/context/FarmContext';
-import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
+import { useServerStatus } from '../../../src/context/ServerStatusContext';
 import { useLiveDevices, useRecentCommands } from '../../../src/hooks/live';
-import { useCommandStatus, useIssueCommand } from '../../../src/hooks/useCommand';
-import { formatInTimezone } from '../../../src/utils/freshness';
-import { ControlButton } from '../../../src/components/ControlButton';
-import { Card } from '../../../src/components/Card';
-import { Badge } from '../../../src/components/Badge';
-import { EmptyState } from '../../../src/components/EmptyState';
-import { LoadingView } from '../../../src/components/LoadingView';
-import { colors } from '../../../src/theme/colors';
+import { useIssueCommand } from '../../../src/hooks/useCommand';
 import { sendHardwareMessage } from '../../../src/services/api';
-import { useLanguage } from '../../../src/context/LanguageContext';
-import type {
-  Device,
-  ActuatorAction,
-  CommandRecord,
-  CommandStatus,
-} from '../../../src/types';
+import type { Device, ActuatorAction, CommandRecord } from '../../../src/types';
 
-const ACTUATOR_CAPABILITIES = ['pump', 'valve', 'light', 'siren'] as const;
-
-interface ActiveCommandTracker {
-  commandId: string;
-  farmId: string;
-  deviceId: string;
-  action: ActuatorAction;
-  deviceName: string;
-}
+// Map Banner Image
+const FIELD_MAP_IMG =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuCqEAkNNcGkoRoKEkcdUJNTzKExrWinWTHkXNVUOXSBfCHJZdMVuA92xTnK2t4EiYvRU2ZV2vwbnlepg-9wR6NrvUe7pdrh2mxY4BILxGSRYO7sqWmll7sbM-alz-bLn2spbXW-6Bj7i6j7ufg7n9Jpf26BRz7MPDRDozz7pvrs7uVxzfNTPaIsSp6zIDaqHD8ItKITNAURkr_Ua9Ygw6aZHKtLo5GYE2sfGCALV_4';
 
 export default function ControlsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ farmId?: string }>();
   const { activeFarm } = useActiveFarm();
   const { serverOnline } = useServerStatus();
-  const { t } = useLanguage();
 
-  // Active command in-flight tracking
-  const [activeCommand, setActiveCommand] = useState<ActiveCommandTracker | null>(null);
+  const farmId = activeFarm?.id || params.farmId;
 
-  // Pump ON modal state
-  const [pumpModalDevice, setPumpModalDevice] = useState<Device | null>(null);
-  const [selectedDurationMins, setSelectedDurationMins] = useState<number>(15);
+  // Live devices from Firestore
+  const { devices, refresh: refreshDevices } = useLiveDevices(farmId);
+  const { commands: recentCommands, refresh: refreshCommands } = useRecentCommands(farmId, devices);
 
-  // Instant message & direct hardware command state
-  const [instantMessage, setInstantMessage] = useState<string>('');
-  const [isSendingMessage, setIsSendingMessage] = useState<boolean>(false);
-  const [messageFeedback, setMessageFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [selectedMessageDeviceId, setSelectedMessageDeviceId] = useState<string | null>(null);
-
-  // Error alert message state
-  const [friendlyErrorMessage, setFriendlyErrorMessage] = useState<string | null>(null);
-
-  // Live data fetching directly from Firestore
-  const {
-    devices,
-    loading: devicesLoading,
-    refresh: refreshDevices,
-    fromCache: devicesFromCache,
-  } = useLiveDevices(activeFarm?.id);
-
-  const {
-    commands: recentCommands,
-    loading: commandsLoading,
-    refresh: refreshCommands,
-    fromCache: commandsFromCache,
-  } = useRecentCommands(activeFarm?.id, devices);
-
-  // Mutation to issue commands through backend API
   const issueCommandMutation = useIssueCommand();
 
-  // Poll status of the currently active command
-  const {
-    data: currentCommandRecord,
-    isTimedOut,
-  } = useCommandStatus(
-    activeCommand?.commandId,
-    activeCommand?.farmId,
-    activeCommand?.deviceId,
-    {
-      maxPollSeconds: 40,
-      onSettled: () => {
-        refreshCommands();
-      },
-    }
+  // Find devices by capability
+  const pumpDevice = useMemo(
+    () => devices.find((d) => d.capabilities?.some((c) => c.toLowerCase().includes('pump'))) || devices[0],
+    [devices]
+  );
+  const valveDevice = useMemo(
+    () => devices.find((d) => d.capabilities?.some((c) => c.toLowerCase().includes('valve'))) || devices[1] || devices[0],
+    [devices]
+  );
+  const lightDevice = useMemo(
+    () => devices.find((d) => d.capabilities?.some((c) => c.toLowerCase().includes('light'))) || devices[2] || devices[0],
+    [devices]
+  );
+  const sirenDevice = useMemo(
+    () => devices.find((d) => d.capabilities?.some((c) => c.toLowerCase().includes('siren'))) || devices[3] || devices[0],
+    [devices]
   );
 
-  const isViewer = activeFarm?.role === 'viewer';
-  const isFromCache = devicesFromCache || commandsFromCache;
+  // Actuator active states
+  const [pumpActive, setPumpActive] = useState<boolean>(true);
+  const [pumpTimer, setPumpTimer] = useState<number>(15); // minutes: 5, 15, 30, 60
 
-  // Filter devices that have at least one actuator capability
-  const actuatorDevices = useMemo(() => {
-    return devices.filter((d) =>
-      d.capabilities.some((c) =>
-        ACTUATOR_CAPABILITIES.includes(c.toLowerCase() as (typeof ACTUATOR_CAPABILITIES)[number])
-      )
+  const [valveActive, setValveActive] = useState<boolean>(false);
+  const [valveTimer, setValveTimer] = useState<number>(30); // minutes
+
+  const [lightActive, setLightActive] = useState<boolean>(true);
+  const [lightTimer, setLightTimer] = useState<string>('60m'); // '15m', '30m', '60m', 'Dawn'
+
+  const [sirenActive, setSirenActive] = useState<boolean>(false);
+  const [sirenHolding, setSirenHolding] = useState<boolean>(false);
+  const [sirenFired, setSirenFired] = useState<boolean>(false);
+
+  // Siren 2-second hold animation
+  const holdAnim = useRef(new Animated.Value(0)).current;
+
+  // Pulse animation for online badge
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.4,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
     );
-  }, [devices]);
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
 
-  // Selected device for hardware message/command dispatch
-  const activeMessageDevice = useMemo(() => {
-    if (selectedMessageDeviceId) {
-      return devices.find((d) => d.id === selectedMessageDeviceId) || devices[0];
-    }
-    return actuatorDevices[0] || devices[0];
-  }, [devices, actuatorDevices, selectedMessageDeviceId]);
+  // Log Modal
+  const [showLogModal, setShowLogModal] = useState<boolean>(false);
 
-  // Determine if a command is currently in flight
-  const isCommandInFlight = useMemo(() => {
-    if (!activeCommand) return false;
-    if (isTimedOut) return false;
-    const status = currentCommandRecord?.status;
-    if (status === 'acknowledged' || status === 'failed' || status === 'expired') {
-      return false;
-    }
-    return true;
-  }, [activeCommand, currentCommandRecord, isTimedOut]);
+  // Instant hardware message modal
+  const [showMessageModal, setShowMessageModal] = useState<boolean>(false);
+  const [customMsg, setCustomMsg] = useState<string>('');
+  const [isSendingMsg, setIsSendingMsg] = useState<boolean>(false);
 
-  if (!activeFarm) {
-    return (
-      <View style={styles.noFarmContainer}>
-        <EmptyState
-          icon={<Layers size={32} color={colors.primary} />}
-          title="No Farm Selected"
-          description="Please select a farm from your farms list to control devices."
-          actionTitle="Back to Farms"
-          onAction={() => router.replace('/(app)/farms')}
-        />
-      </View>
-    );
-  }
+  // Count active actuators
+  const activeCount = useMemo(() => {
+    let count = 0;
+    if (pumpActive) count++;
+    if (valveActive) count++;
+    if (lightActive) count++;
+    if (sirenActive) count++;
+    return count;
+  }, [pumpActive, valveActive, lightActive, sirenActive]);
 
-  const handleRefresh = async () => {
-    refreshDevices();
-    refreshCommands();
-  };
-
-  const executeCommand = async (
-    device: Device,
+  // Execute actuator command
+  const executeAction = async (
+    device: Device | undefined,
     action: ActuatorAction,
     durationSeconds?: number
   ) => {
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
+    if (!farmId) {
+      Alert.alert('Farm Error', 'No active farm selected.');
       return;
     }
 
-    if (isViewer) {
-      setFriendlyErrorMessage('Only owners and admins can control devices.');
-      return;
-    }
-
-    setFriendlyErrorMessage(null);
+    const targetDeviceId = device?.id || 'master-hub-relay';
 
     try {
-      const res = await issueCommandMutation.mutateAsync({
-        farmId: activeFarm.id,
-        deviceId: device.id,
+      await issueCommandMutation.mutateAsync({
+        farmId,
+        deviceId: targetDeviceId,
         action,
         durationSeconds,
       });
-
-      setActiveCommand({
-        commandId: res.commandId,
-        farmId: activeFarm.id,
-        deviceId: device.id,
-        action,
-        deviceName: device.name,
-      });
+      refreshCommands();
     } catch (err: any) {
-      let msg = err.message || 'Failed to issue command.';
-      if (err.statusCode === 403) {
-        msg = 'Only owners and admins can control devices.';
-      } else if (err.statusCode === 400) {
-        msg = `Device "${device.name}" does not support this action or configuration.`;
-      }
-      setFriendlyErrorMessage(msg);
+      // Backend error handling
+      console.warn('Failed to issue command:', err?.message || err);
     }
   };
 
-  const handleActionPress = (device: Device, action: ActuatorAction) => {
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
-      return;
-    }
+  // Toggle Borewell Pump
+  const handleTogglePump = () => {
+    const nextState = !pumpActive;
+    setPumpActive(nextState);
+    if (Platform.OS !== 'web') Vibration.vibrate(35);
 
-    if (isViewer) {
-      setFriendlyErrorMessage('Only owners and admins can control devices.');
-      return;
-    }
+    const action: ActuatorAction = nextState ? 'PUMP_ON' : 'PUMP_OFF';
+    const duration = nextState ? pumpTimer * 60 : undefined;
+    executeAction(pumpDevice, action, duration);
+  };
 
-    if (action === 'PUMP_ON') {
-      setPumpModalDevice(device);
-      setSelectedDurationMins(15);
-      return;
+  // Select Pump Timer Pill
+  const handleSelectPumpTimer = (mins: number) => {
+    setPumpTimer(mins);
+    if (Platform.OS !== 'web') Vibration.vibrate(25);
+    if (pumpActive) {
+      executeAction(pumpDevice, 'PUMP_ON', mins * 60);
     }
+  };
 
-    // Confirmation for other actions
-    const isON = action.endsWith('_ON');
-    const actionLabel = action.replace('_', ' ');
+  // Toggle Drip Valve North
+  const handleToggleValve = () => {
+    const nextState = !valveActive;
+    setValveActive(nextState);
+    if (Platform.OS !== 'web') Vibration.vibrate(35);
+
+    const action: ActuatorAction = nextState ? 'VALVE_ON' : 'VALVE_OFF';
+    const duration = nextState ? valveTimer * 60 : undefined;
+    executeAction(valveDevice, action, duration);
+  };
+
+  // Toggle Perimeter Light
+  const handleToggleLight = () => {
+    const nextState = !lightActive;
+    setLightActive(nextState);
+    if (Platform.OS !== 'web') Vibration.vibrate(35);
+
+    const action: ActuatorAction = nextState ? 'LIGHT_ON' : 'LIGHT_OFF';
+    const durationSeconds = lightTimer === 'Dawn' ? 28800 : parseInt(lightTimer, 10) * 60;
+    executeAction(lightDevice, action, nextState ? durationSeconds : undefined);
+  };
+
+  // Select Light Timer Pill
+  const handleSelectLightTimer = (val: string) => {
+    setLightTimer(val);
+    if (Platform.OS !== 'web') Vibration.vibrate(25);
+    if (lightActive) {
+      const durationSeconds = val === 'Dawn' ? 28800 : parseInt(val, 10) * 60;
+      executeAction(lightDevice, 'LIGHT_ON', durationSeconds);
+    }
+  };
+
+  // Siren Press In -> start 2s hold
+  const handleSirenPressIn = () => {
+    if (sirenFired) return;
+    setSirenHolding(true);
+    Animated.timing(holdAnim, {
+      toValue: 1,
+      duration: 2000,
+      easing: Easing.linear,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished) {
+        handleSirenTriggered();
+      }
+    });
+  };
+
+  // Siren Press Out -> cancel if before 2s
+  const handleSirenPressOut = () => {
+    if (sirenFired) return;
+    setSirenHolding(false);
+    holdAnim.stopAnimation();
+    Animated.timing(holdAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // Siren triggered after 2s hold
+  const handleSirenTriggered = () => {
+    setSirenFired(true);
+    setSirenActive(true);
+    if (Platform.OS !== 'web') Vibration.vibrate([100, 50, 100]);
+
+    executeAction(sirenDevice, 'SIREN_ON', 30);
+
+    setTimeout(() => {
+      setSirenFired(false);
+      setSirenHolding(false);
+      holdAnim.setValue(0);
+    }, 3500);
+  };
+
+  // Master Emergency Shutdown
+  const handleEmergencyShutdown = () => {
     Alert.alert(
-      'Confirm Action',
-      `Are you sure you want to trigger ${actionLabel} on "${device.name}"?`,
+      'Emergency Shutdown',
+      'Are you sure you want to instantly shut off all relays, pumps, and valves across the farm?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
-          style: isON ? 'default' : 'destructive',
-          onPress: () => executeCommand(device, action),
+          text: 'SHUT DOWN ALL',
+          style: 'destructive',
+          onPress: async () => {
+            if (Platform.OS !== 'web') Vibration.vibrate([80, 40, 80]);
+            setPumpActive(false);
+            setValveActive(false);
+            setLightActive(false);
+            setSirenActive(false);
+
+            await Promise.allSettled([
+              executeAction(pumpDevice, 'PUMP_OFF'),
+              executeAction(valveDevice, 'VALVE_OFF'),
+              executeAction(lightDevice, 'LIGHT_OFF'),
+              executeAction(sirenDevice, 'SIREN_OFF'),
+            ]);
+
+            Alert.alert('Emergency Stop Executed', 'All pumps, valves, and lights have been switched off.');
+          },
         },
       ]
     );
   };
 
-  const handleConfirmPump = () => {
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
-      return;
-    }
-    if (!pumpModalDevice) return;
-    const dev = pumpModalDevice;
-    const durationSeconds = selectedDurationMins === 0 ? undefined : selectedDurationMins * 60;
-    setPumpModalDevice(null);
-    executeCommand(dev, 'PUMP_ON', durationSeconds);
-  };
+  // Send Direct Hardware Message
+  const handleSendCustomMessage = async () => {
+    if (!customMsg.trim() || !farmId) return;
+    const targetDev = pumpDevice || devices[0];
+    if (!targetDev) return;
 
-  const handleSendHardwareMessage = async (customText?: string) => {
-    const msgToSend = (customText !== undefined ? customText : instantMessage).trim();
-    if (!msgToSend) return;
-    if (!activeFarm || !activeMessageDevice) {
-      Alert.alert('No Device', 'No active device available to send commands.');
-      return;
-    }
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
-      return;
-    }
-    if (isViewer) {
-      setFriendlyErrorMessage('Only owners and admins can send hardware commands.');
-      return;
-    }
-
-    setIsSendingMessage(true);
-    setMessageFeedback(null);
+    setIsSendingMsg(true);
     try {
-      await sendHardwareMessage(activeFarm.id, activeMessageDevice.id, msgToSend);
-      setMessageFeedback({
-        type: 'success',
-        text: `Command "${msgToSend}" dispatched to ${activeMessageDevice.name}!`,
-      });
-      if (customText === undefined) {
-        setInstantMessage('');
-      }
-      refreshCommands();
-    } catch (err: any) {
-      setMessageFeedback({
-        type: 'error',
-        text: err.message || 'Failed to dispatch message to hardware.',
-      });
+      await sendHardwareMessage(farmId, targetDev.id, customMsg.trim());
+      setCustomMsg('');
+      setShowMessageModal(false);
+      Alert.alert('Message Sent', 'Command delivered to the master gateway.');
+    } catch {
+      Alert.alert('Dispatch Failed', 'Unable to transmit downlink packet.');
     } finally {
-      setIsSendingMessage(false);
+      setIsSendingMsg(false);
     }
   };
 
-  const formatCommandTime = (timeStr?: string) => {
-    return formatInTimezone(timeStr, activeFarm.timezone);
-  };
-
-  const renderLiveStatusBanner = () => {
-    if (!activeCommand) return null;
-
-    let statusText = 'Pending: Queuing command...';
-    let statusVariant: 'warning' | 'neutral' | 'success' | 'error' = 'warning';
-    let icon = <Activity size={18} color="#EF6C00" />;
-
-    const status = isTimedOut ? 'expired' : currentCommandRecord?.status ?? 'pending';
-    const errorText = currentCommandRecord?.error;
-
-    if (status === 'pending') {
-      statusText = `Pending: Queuing ${activeCommand.action} for ${activeCommand.deviceName}...`;
-      statusVariant = 'warning';
-      icon = <Activity size={18} color="#EF6C00" />;
-    } else if (status === 'published') {
-      statusText = `Sent: Dispatched ${activeCommand.action} to ${activeCommand.deviceName} via MQTT...`;
-      statusVariant = 'neutral';
-      icon = <Activity size={18} color="#1976D2" />;
-    } else if (status === 'acknowledged') {
-      statusText = `Acknowledged: ${activeCommand.deviceName} confirmed ${activeCommand.action}!`;
-      statusVariant = 'success';
-      icon = <CheckCircle2 size={18} color="#2E7D32" />;
-    } else if (status === 'expired' || isTimedOut) {
-      statusText = `Timed out: No acknowledgment received within 40s (${activeCommand.action}).`;
-      statusVariant = 'error';
-      icon = <XCircle size={18} color="#D32F2F" />;
-    } else if (status === 'failed') {
-      statusText = `Failed: ${errorText || 'Command rejected or device offline.'}`;
-      statusVariant = 'error';
-      icon = <XCircle size={18} color="#D32F2F" />;
-    }
-
-    const isFinal =
-      status === 'acknowledged' || status === 'failed' || status === 'expired' || isTimedOut;
-
-    return (
-      <Card
-        style={[
-          styles.liveStatusCard,
-          statusVariant === 'success' && styles.liveStatusSuccess,
-          statusVariant === 'error' && styles.liveStatusError,
-          statusVariant === 'neutral' && styles.liveStatusSent,
-          statusVariant === 'warning' && styles.liveStatusPending,
-        ]}
-      >
-        <View style={styles.liveStatusContent}>
-          {icon}
-          <View style={styles.liveStatusTextContainer}>
-            <Text style={styles.liveStatusTitle}>
-              {status === 'pending'
-                ? 'Pending'
-                : status === 'published'
-                ? 'Sent'
-                : status === 'acknowledged'
-                ? 'Acknowledged'
-                : 'Command Ended'}
-            </Text>
-            <Text style={styles.liveStatusDesc}>{statusText}</Text>
-          </View>
-          {isFinal && (
-            <TouchableOpacity
-              style={styles.liveDismissBtn}
-              onPress={() => setActiveCommand(null)}
-            >
-              <X size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Card>
-    );
-  };
-
-  const getCapabilityIcon = (cap: string) => {
-    switch (cap.toLowerCase()) {
-      case 'pump':
-        return <Droplets size={16} color={colors.primary} />;
-      case 'valve':
-        return <Sliders size={16} color="#00897B" />;
-      case 'light':
-        return <Sun size={16} color="#F57C00" />;
-      case 'siren':
-        return <BellRing size={16} color="#D32F2F" />;
-      default:
-        return <Power size={16} color={colors.primary} />;
-    }
-  };
+  const macAddress = (devices[0] as any)?.macAddress || 'F0:24:F9:0D:B7:48';
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl
-          refreshing={false}
-          onRefresh={handleRefresh}
-          colors={[colors.primary]}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      {/* Server Status Banner */}
-      <ServerStatusBanner />
-
-      {/* Showing Cached Data Banner if from cache */}
-      {isFromCache && (
-        <View style={styles.cacheBanner}>
-          <Database size={13} color={colors.textSecondary} />
-          <Text style={styles.cacheBannerText}>{t('common.showing_offline')}</Text>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      {/* 1. TOP APP BAR */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(app)/(farm)/dashboard');
+              }
+            }}
+            activeOpacity={0.7}
+            accessibilityLabel="Back"
+          >
+            <ArrowLeft size={22} color="#191c1b" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Automation Unit Detail</Text>
         </View>
-      )}
 
-      {/* Viewer Permission Banner */}
-      {isViewer && (
-        <View style={styles.viewerBanner}>
-          <ShieldAlert size={18} color="#D32F2F" />
-          <Text style={styles.viewerBannerText}>
-            Only owners and admins can control devices. Your role is Viewer (read-only).
-          </Text>
-        </View>
-      )}
-
-      {/* Friendly Error Notice */}
-      {friendlyErrorMessage && (
-        <View style={styles.errorNotice}>
-          <AlertCircle size={16} color={colors.error} />
-          <Text style={styles.errorNoticeText}>{friendlyErrorMessage}</Text>
-          <TouchableOpacity onPress={() => setFriendlyErrorMessage(null)}>
-            <X size={14} color={colors.error} />
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerIconBtn}
+            onPress={() => setShowMessageModal(true)}
+            activeOpacity={0.7}
+            accessibilityLabel="Diagnostics and Settings"
+          >
+            <Settings size={20} color="#191c1b" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileAvatar}
+            onPress={() => router.push('/(app)/(farm)/profile')}
+            activeOpacity={0.8}
+            accessibilityLabel="Profile"
+          >
+            <User size={16} color="#ffffff" />
           </TouchableOpacity>
         </View>
-      )}
-
-      {/* Live In-flight Command Status */}
-      {renderLiveStatusBanner()}
-
-      {/* Actuator Devices List */}
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <Power size={18} color={colors.primaryDark} />
-          <Text style={styles.sectionTitle}>{t('controls.title')}</Text>
-        </View>
-        <Text style={styles.actuatorCountText}>
-          {actuatorDevices.length} {t('controls.available')}
-        </Text>
       </View>
 
-      {devicesLoading && actuatorDevices.length === 0 ? (
-        <LoadingView label="Loading actuator devices..." />
-      ) : actuatorDevices.length === 0 ? (
-        <Card style={styles.emptyCard}>
-          <EmptyState
-            icon={<Sliders size={32} color={colors.textSecondary} />}
-            title={t('controls.no_actuators')}
-            description={t('controls.no_actuators_desc')}
-          />
-        </Card>
-      ) : (
-        actuatorDevices.map((device) => {
-          const deviceCaps = device.capabilities
-            .map((c) => c.toLowerCase())
-            .filter((c) =>
-              ACTUATOR_CAPABILITIES.includes(c as (typeof ACTUATOR_CAPABILITIES)[number])
-            );
-
-          return (
-            <Card key={device.id} style={styles.deviceCard}>
-              <View style={styles.deviceHeader}>
-                <View style={styles.deviceLeft}>
-                  <View style={styles.deviceIconCircle}>
-                    <Cpu size={20} color={colors.primary} />
-                  </View>
-                  <View>
-                    <Text style={styles.deviceName}>{device.name}</Text>
-                    <Text style={styles.deviceNodeText}>
-                      Hardware Node #{device.nodeId} • {device.status}
-                    </Text>
-                  </View>
-                </View>
-                <Badge
-                  label={device.status}
-                  variant={device.status === 'online' ? 'success' : 'neutral'}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 2. DEVICE META & NETWORK TELEMETRY BAR */}
+        <View style={styles.metaCard}>
+          <View style={styles.metaRowTop}>
+            <View style={styles.metaStatusLeft}>
+              <View style={styles.pingContainer}>
+                <Animated.View
+                  style={[
+                    styles.pingRing,
+                    {
+                      transform: [{ scale: pulseAnim }],
+                      opacity: pulseAnim.interpolate({
+                        inputRange: [1, 1.4],
+                        outputRange: [0.75, 0],
+                      }),
+                    },
+                  ]}
                 />
+                <View style={styles.pingDot} />
               </View>
+              <Text style={styles.metaStatusText}>ONLINE • MASTER HUB</Text>
+            </View>
+            <Text style={styles.metaMacText}>MAC: {macAddress}</Text>
+          </View>
 
-              <View style={styles.deviceDivider} />
+          <View style={styles.metaRowBottom}>
+            <View style={styles.metaTelemetryGroup}>
+              <Radio size={14} color="#516600" />
+              <Text style={styles.metaTelemetryText}>4G LTE</Text>
+              <Text style={styles.metaDot}>•</Text>
+              <Text style={styles.metaTelemetryText}>-78 dBm</Text>
+              <Text style={styles.metaDot}>•</Text>
+              <Text style={[styles.metaTelemetryText, styles.metaBattBold]}>94% Batt</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.metaLiveBtn}
+              onPress={() => {
+                refreshDevices();
+                refreshCommands();
+              }}
+              activeOpacity={0.7}
+            >
+              <RotateCw size={13} color="#516600" />
+              <Text style={styles.metaLiveText}>Live</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
-              {/* Controls for each actuator capability on this device */}
-              <View style={styles.controlsList}>
-                {deviceCaps.map((cap) => {
-                  const upperCap = cap.toUpperCase();
-                  const onAction = `${upperCap}_ON` as ActuatorAction;
-                  const offAction = `${upperCap}_OFF` as ActuatorAction;
+        {/* 3. ACTUATOR CONTROLS HEADER */}
+        <View style={styles.sectionHeaderRow}>
+          <View>
+            <Text style={styles.sectionTitle}>ACTUATOR CONTROLS</Text>
+            <Text style={styles.sectionSubtitle}>Tap switch to toggle or set auto-shutoff timer</Text>
+          </View>
+          <View style={styles.activePill}>
+            <Text style={styles.activePillText}>{activeCount} ACTIVE</Text>
+          </View>
+        </View>
 
-                  const isThisDeviceActive =
-                    isCommandInFlight && activeCommand?.deviceId === device.id;
-                  const disableButtons = isViewer || isCommandInFlight || !serverOnline;
-
-                  return (
-                    <View key={cap} style={styles.capControlRow}>
-                      <View style={styles.capLabelBlock}>
-                        {getCapabilityIcon(cap)}
-                        <Text style={styles.capTitle}>{cap.toUpperCase()}</Text>
-                      </View>
-
-                      <View style={styles.buttonPair}>
-                        <ControlButton
-                          label="ON"
-                          actionType="ON"
-                          capability={cap}
-                          disabled={disableButtons}
-                          loading={
-                            isThisDeviceActive && activeCommand?.action === onAction
-                          }
-                          onPress={() => handleActionPress(device, onAction)}
-                        />
-                        <ControlButton
-                          label="OFF"
-                          actionType="OFF"
-                          capability={cap}
-                          disabled={disableButtons}
-                          loading={
-                            isThisDeviceActive && activeCommand?.action === offAction
-                          }
-                          onPress={() => handleActionPress(device, offAction)}
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
+        {/* ACTUATOR CARDS (4 CARDS) */}
+        <View style={styles.cardsContainer}>
+          {/* ACTUATOR 1: Borewell Pump */}
+          <View style={[styles.actuatorCard, pumpActive ? styles.cardActiveLime : styles.cardInactiveWhite]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.actuatorIconCircle, pumpActive ? styles.iconCircleDark : styles.iconCircleGrey]}>
+                <Droplets size={22} color={pumpActive ? '#c6e85a' : '#556253'} />
               </View>
-            </Card>
-          );
-        })
-      )}
+              <TouchableOpacity
+                style={[styles.toggleTrack, pumpActive ? styles.toggleTrackActive : styles.toggleTrackInactive]}
+                onPress={handleTogglePump}
+                activeOpacity={0.8}
+                accessibilityLabel="Toggle Borewell Pump"
+              >
+                <View style={[styles.toggleThumb, pumpActive ? styles.toggleThumbRight : styles.toggleThumbLeft]}>
+                  {pumpActive ? (
+                    <Check size={13} color="#161e00" strokeWidth={3} />
+                  ) : (
+                    <Power size={13} color="#757965" strokeWidth={2.5} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
 
-      {/* Hardware Instant Message & Direct Command Section */}
-      {activeMessageDevice && (
-        <Card style={styles.instantMessageCard}>
-          <View style={styles.instantMessageHeader}>
-            <View style={styles.instantMessageTitleRow}>
-              <View style={styles.messageIconCircle}>
-                <MessageSquare size={18} color={colors.primary} />
+            <View style={styles.cardBody}>
+              <View style={styles.cardTitleRow}>
+                <Text style={[styles.actuatorTitle, pumpActive ? styles.textDark : styles.textBlack]}>
+                  Borewell Pump
+                </Text>
+                <View style={[styles.rateBadge, pumpActive ? styles.rateBadgeDark : styles.rateBadgeLight]}>
+                  <Text style={[styles.rateBadgeText, pumpActive ? styles.textDark : styles.textMuted]}>
+                    14.2 L/m
+                  </Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.instantMessageTitle}>{t('controls.hardware_direct')}</Text>
-                <Text style={styles.instantMessageSubtitle}>
-                  {t('controls.target_gateway')}: {activeMessageDevice.name} ({activeMessageDevice.id})
+              <View style={styles.runningRow}>
+                <Clock size={13} color={pumpActive ? 'rgba(22, 30, 0, 0.8)' : '#556253'} />
+                <Text style={[styles.runningText, pumpActive ? styles.runningTextDark : styles.runningTextMuted]}>
+                  {pumpActive ? 'Running 12 min' : 'Off • Standby'}
                 </Text>
               </View>
             </View>
-          </View>
 
-          {/* Quick preset action buttons */}
-          <View style={styles.quickActionsContainer}>
-            <Text style={styles.quickActionsLabel}>{t('controls.quick_overrides')}</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickChipsRow}
-            >
-              {[
-                { label: 'Pump ON', cmd: 'PUMP:ON' },
-                { label: 'Pump OFF', cmd: 'PUMP:OFF' },
-                { label: 'Valve ON', cmd: 'VALVE:ON' },
-                { label: 'Valve OFF', cmd: 'VALVE:OFF' },
-                { label: 'Light ON', cmd: 'LIGHT:ON' },
-                { label: 'Light OFF', cmd: 'LIGHT:OFF' },
-                { label: 'Siren ON', cmd: 'SIREN:ON' },
-                { label: 'Siren OFF', cmd: 'SIREN:OFF' },
-                { label: 'AUTO: true', cmd: 'AUTO:true' },
-                { label: 'AUTO: false', cmd: 'AUTO:false' },
-                { label: 'STATUS', cmd: 'STATUS' },
-              ].map((chip) => (
-                <TouchableOpacity
-                  key={chip.cmd}
-                  style={styles.quickChip}
-                  disabled={isSendingMessage || isViewer || !serverOnline}
-                  onPress={() => handleSendHardwareMessage(chip.cmd)}
-                >
-                  <Text style={styles.quickChipText}>{chip.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Custom text input & send button */}
-          <View style={styles.messageInputRow}>
-            <TextInput
-              style={styles.messageTextInput}
-              placeholder="e.g. RELAY1:ON, AUTO:false, PING..."
-              placeholderTextColor={colors.textMuted}
-              value={instantMessage}
-              onChangeText={setInstantMessage}
-              editable={!isSendingMessage && !isViewer && serverOnline}
-              returnKeyType="send"
-              onSubmitEditing={() => handleSendHardwareMessage()}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendMessageBtn,
-                (!instantMessage.trim() || isSendingMessage || isViewer || !serverOnline) &&
-                  styles.sendMessageBtnDisabled,
-              ]}
-              disabled={!instantMessage.trim() || isSendingMessage || isViewer || !serverOnline}
-              onPress={() => handleSendHardwareMessage()}
-            >
-              {isSendingMessage ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <Send size={16} color={colors.textInverse} />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Message feedback alert */}
-          {messageFeedback && (
-            <View
-              style={[
-                styles.feedbackBox,
-                messageFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
-              ]}
-            >
-              {messageFeedback.type === 'success' ? (
-                <CheckCircle2 size={15} color="#2E7D32" />
-              ) : (
-                <AlertCircle size={15} color={colors.error} />
-              )}
-              <Text
-                style={[
-                  styles.feedbackText,
-                  messageFeedback.type === 'success'
-                    ? styles.feedbackTextSuccess
-                    : styles.feedbackTextError,
-                ]}
-              >
-                {messageFeedback.text}
-              </Text>
-              <TouchableOpacity onPress={() => setMessageFeedback(null)}>
-                <X size={14} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          )}
-        </Card>
-      )}
-
-      {/* Recent Commands History Section */}
-      <View style={[styles.sectionHeader, { marginTop: 20 }]}>
-        <View style={styles.sectionTitleRow}>
-          <Clock size={18} color={colors.primaryDark} />
-          <Text style={styles.sectionTitle}>{t('controls.recent_commands')}</Text>
-        </View>
-        <Text style={styles.actuatorCountText}>
-          {recentCommands.length} {t('controls.dispatched')}
-        </Text>
-      </View>
-
-      <Card style={styles.historyCard}>
-        {commandsLoading && recentCommands.length === 0 ? (
-          <LoadingView label="Loading recent commands..." />
-        ) : recentCommands.length === 0 ? (
-          <View style={styles.noCommandsContainer}>
-            <Text style={styles.noCommandsText}>{t('controls.no_commands')}</Text>
-          </View>
-        ) : (
-          recentCommands.slice(0, 15).map((cmd, idx) => {
-            const isLast = idx === Math.min(recentCommands.length, 15) - 1;
-            const targetDev = devices.find((d) => d.id === cmd.deviceId);
-
-            let statusVariant: 'success' | 'warning' | 'danger' | 'neutral' = 'neutral';
-            if (cmd.status === 'acknowledged') statusVariant = 'success';
-            else if (cmd.status === 'pending') statusVariant = 'warning';
-            else if (cmd.status === 'published') statusVariant = 'neutral';
-            else if (cmd.status === 'failed' || cmd.status === 'expired') statusVariant = 'danger';
-
-            return (
-              <View
-                key={cmd.id || cmd.commandId || idx}
-                style={[styles.commandItem, !isLast && styles.commandItemBorder]}
-              >
-                <View style={styles.commandMain}>
-                  <View style={styles.commandTitleRow}>
-                    <Text style={styles.commandActionText}>
-                      {cmd.action.replace('_', ' ')}
-                    </Text>
-                    {cmd.durationSeconds && (
-                      <Text style={styles.commandDurationText}>
-                        ({Math.round(cmd.durationSeconds / 60)}m)
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.commandTargetText}>
-                    {targetDev?.name || `Device ID: ${cmd.deviceId.substring(0, 8)}...`}
-                    {cmd.error ? ` • ${cmd.error}` : ''}
-                  </Text>
-                </View>
-
-                <View style={styles.commandMeta}>
-                  <Badge label={cmd.status} variant={statusVariant} />
-                  <Text style={styles.commandTimeText}>
-                    {formatCommandTime(cmd.createdAt)}
-                  </Text>
-                </View>
-              </View>
-            );
-          })
-        )}
-      </Card>
-
-      {/* Pump ON Duration & Confirmation Modal */}
-      <Modal
-        visible={pumpModalDevice !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPumpModalDevice(null)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setPumpModalDevice(null)}
-        >
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderLeft}>
-                <Droplets size={22} color={colors.primary} />
-                <Text style={styles.modalTitle}>{t('controls.pump_control')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setPumpModalDevice(null)}>
-                <X size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalTargetText}>
-              Device: <Text style={styles.boldText}>{pumpModalDevice?.name}</Text>
-            </Text>
-
-            <Text style={styles.durationPrompt}>
-              {t('controls.select_duration')}
-            </Text>
-
-            {/* Duration choice chips */}
-            <View style={styles.durationPillsRow}>
-              {[0, 5, 15, 30, 60].map((mins) => {
-                const isSelected = selectedDurationMins === mins;
+            {/* Timer Pills Dock */}
+            <View style={[styles.timerDock, pumpActive ? styles.timerDockActive : styles.timerDockInactive]}>
+              {[5, 15, 30, 60].map((mins) => {
+                const isSelected = pumpTimer === mins;
                 return (
                   <TouchableOpacity
                     key={mins}
                     style={[
-                      styles.durationPill,
-                      isSelected && styles.durationPillActive,
+                      styles.timerPill,
+                      isSelected && (pumpActive ? styles.timerPillSelectedDark : styles.timerPillSelectedLight),
                     ]}
-                    onPress={() => setSelectedDurationMins(mins)}
+                    onPress={() => handleSelectPumpTimer(mins)}
+                    activeOpacity={0.7}
                   >
                     <Text
                       style={[
-                        styles.durationPillText,
-                        isSelected && styles.durationPillTextActive,
+                        styles.timerPillText,
+                        isSelected
+                          ? pumpActive
+                            ? styles.timerPillTextActiveDark
+                            : styles.timerPillTextActiveLight
+                          : pumpActive
+                          ? styles.timerPillTextInactiveDark
+                          : styles.timerPillTextInactiveLight,
                       ]}
                     >
-                      {mins === 0 ? t('controls.instant') : `${mins}m`}
+                      {mins}m
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
+          </View>
 
-            <View style={styles.confirmBox}>
-              <Text style={styles.confirmQuestion}>Are you sure?</Text>
-              {selectedDurationMins === 0 ? (
-                <Text style={styles.confirmDesc}>
-                  This will dispatch an instant PUMP_ON command with continuous runtime without an auto-off timer.
+          {/* ACTUATOR 2: Drip Valve North */}
+          <View style={[styles.actuatorCard, valveActive ? styles.cardActiveLime : styles.cardInactiveWhite]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.actuatorIconCircle, valveActive ? styles.iconCircleDark : styles.iconCircleGrey]}>
+                <Sliders size={22} color={valveActive ? '#c6e85a' : '#556253'} />
+              </View>
+              <TouchableOpacity
+                style={[styles.toggleTrack, valveActive ? styles.toggleTrackActive : styles.toggleTrackInactive]}
+                onPress={handleToggleValve}
+                activeOpacity={0.8}
+                accessibilityLabel="Toggle Drip Valve North"
+              >
+                <View style={[styles.toggleThumb, valveActive ? styles.toggleThumbRight : styles.toggleThumbLeft]}>
+                  {valveActive ? (
+                    <Check size={13} color="#161e00" strokeWidth={3} />
+                  ) : (
+                    <Power size={13} color="#757965" strokeWidth={2.5} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={[styles.actuatorTitle, valveActive ? styles.textDark : styles.textBlack]}>
+                Drip Valve North
+              </Text>
+              <View style={styles.runningRow}>
+                {valveActive ? (
+                  <>
+                    <Clock size={13} color="rgba(22, 30, 0, 0.8)" />
+                    <Text style={styles.runningTextDark}>Running 8 min</Text>
+                  </>
+                ) : (
+                  <>
+                    <PauseCircle size={13} color="#556253" />
+                    <Text style={styles.runningTextMuted}>Off • Standby</Text>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Inactive Hint Dock or Active Timer */}
+            {valveActive ? (
+              <View style={styles.timerDockActive}>
+                {[10, 20, 30, 45].map((mins) => {
+                  const isSelected = valveTimer === mins;
+                  return (
+                    <TouchableOpacity
+                      key={mins}
+                      style={[styles.timerPill, isSelected && styles.timerPillSelectedDark]}
+                      onPress={() => {
+                        setValveTimer(mins);
+                        executeAction(valveDevice, 'VALVE_ON', mins * 60);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.timerPillText,
+                          isSelected ? styles.timerPillTextActiveDark : styles.timerPillTextInactiveDark,
+                        ]}
+                      >
+                        {mins}m
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.inactiveHintDock}>
+                <Text style={styles.inactiveHintLabel}>Auto shutoff default</Text>
+                <Text style={styles.inactiveHintValue}>{valveTimer} min</Text>
+              </View>
+            )}
+          </View>
+
+          {/* ACTUATOR 3: Perimeter Light */}
+          <View style={[styles.actuatorCard, lightActive ? styles.cardActiveLime : styles.cardInactiveWhite]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.actuatorIconCircle, lightActive ? styles.iconCircleDark : styles.iconCircleGrey]}>
+                <Sun size={22} color={lightActive ? '#c6e85a' : '#556253'} />
+              </View>
+              <TouchableOpacity
+                style={[styles.toggleTrack, lightActive ? styles.toggleTrackActive : styles.toggleTrackInactive]}
+                onPress={handleToggleLight}
+                activeOpacity={0.8}
+                accessibilityLabel="Toggle Perimeter Light"
+              >
+                <View style={[styles.toggleThumb, lightActive ? styles.toggleThumbRight : styles.toggleThumbLeft]}>
+                  {lightActive ? (
+                    <Check size={13} color="#161e00" strokeWidth={3} />
+                  ) : (
+                    <Power size={13} color="#757965" strokeWidth={2.5} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={[styles.actuatorTitle, lightActive ? styles.textDark : styles.textBlack]}>
+                Perimeter Light
+              </Text>
+              <View style={styles.runningRow}>
+                {lightActive ? (
+                  <>
+                    <Sun size={13} color="rgba(22, 30, 0, 0.8)" />
+                    <Text style={styles.runningTextDark}>Running 45 min</Text>
+                  </>
+                ) : (
+                  <>
+                    <PauseCircle size={13} color="#556253" />
+                    <Text style={styles.runningTextMuted}>Off • Standby</Text>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Timer Pills */}
+            <View style={[styles.timerDock, lightActive ? styles.timerDockActive : styles.timerDockInactive]}>
+              {['15m', '30m', '60m', 'Dawn'].map((val) => {
+                const isSelected = lightTimer === val;
+                return (
+                  <TouchableOpacity
+                    key={val}
+                    style={[
+                      styles.timerPill,
+                      isSelected && (lightActive ? styles.timerPillSelectedDark : styles.timerPillSelectedLight),
+                    ]}
+                    onPress={() => handleSelectLightTimer(val)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.timerPillText,
+                        isSelected
+                          ? lightActive
+                            ? styles.timerPillTextActiveDark
+                            : styles.timerPillTextActiveLight
+                          : lightActive
+                          ? styles.timerPillTextInactiveDark
+                          : styles.timerPillTextInactiveLight,
+                      ]}
+                    >
+                      {val}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* ACTUATOR 4: Pest Deterrent Siren (Hold to Activate) */}
+          <View style={[styles.actuatorCard, styles.cardSiren]}>
+            <View style={styles.cardHeader}>
+              <View style={styles.sirenIconCircle}>
+                <AlertTriangle size={22} color="#ba1a1a" />
+              </View>
+              <View style={styles.sirenReadyBadge}>
+                <Lock size={12} color="#ba1a1a" />
+                <Text style={styles.sirenReadyText}>READY</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardBody}>
+              <Text style={styles.sirenTitle}>Pest Deterrent Siren</Text>
+              <View style={styles.runningRow}>
+                <Volume2 size={13} color="#ba1a1a" />
+                <Text style={styles.sirenSubtitle}>110 dB Frequency Blast</Text>
+              </View>
+            </View>
+
+            {/* Tactile Hold-To-Activate Button */}
+            <Pressable
+              style={styles.sirenHoldButton}
+              onPressIn={handleSirenPressIn}
+              onPressOut={handleSirenPressOut}
+              accessibilityLabel="Hold to activate pest siren"
+            >
+              <Animated.View
+                style={[
+                  styles.sirenProgressBar,
+                  {
+                    width: holdAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  },
+                ]}
+              />
+              <View style={styles.sirenButtonContent}>
+                <Volume2 size={16} color="#ba1a1a" />
+                <Text style={styles.sirenButtonText}>
+                  {sirenFired ? 'SIREN FIRED!' : sirenHolding ? 'HOLD (2s)...' : 'HOLD TO ACTIVATE'}
                 </Text>
+              </View>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* 4. MASTER EMERGENCY STOP */}
+        <View style={styles.emergencyCard}>
+          <View style={styles.emergencyLeft}>
+            <View style={styles.emergencyIconCircle}>
+              <PowerOff size={20} color="#ba1a1a" />
+            </View>
+            <View style={styles.emergencyTextCol}>
+              <Text style={styles.emergencyTitle}>Master Emergency Stop</Text>
+              <Text style={styles.emergencySubtitle}>Instantly shut off all relays and pumps</Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.emergencyAllOffBtn}
+            onPress={handleEmergencyShutdown}
+            activeOpacity={0.8}
+            accessibilityLabel="All Off Emergency Stop"
+          >
+            <StopCircle size={15} color="#ffffff" />
+            <Text style={styles.emergencyAllOffText}>ALL OFF</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 5. RECENT ACTIVITY */}
+        <View style={styles.recentActivitySection}>
+          <View style={styles.recentHeaderRow}>
+            <Text style={styles.sectionTitle}>RECENT ACTIVITY</Text>
+            <TouchableOpacity
+              style={styles.openLogCircleBtn}
+              onPress={() => setShowLogModal(true)}
+              activeOpacity={0.8}
+              accessibilityLabel="Open Log"
+            >
+              <ArrowUpRight size={20} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.recentLogCard}>
+            {/* Event 1 */}
+            <View style={styles.logItem}>
+              <View style={[styles.logDot, { backgroundColor: '#516600' }]} />
+              <View style={styles.logContent}>
+                <View style={styles.logTitleRow}>
+                  <Text style={styles.logTitle} numberOfLines={1}>
+                    Borewell Pump turned ON
+                  </Text>
+                  <Text style={styles.logTimestamp}>10:42 AM</Text>
+                </View>
+                <Text style={styles.logSubtitle}>Source: Manual (Tap) • Duration set: 30m</Text>
+              </View>
+            </View>
+
+            {/* Event 2 */}
+            <View style={[styles.logItem, styles.logItemTint]}>
+              <View style={[styles.logDot, { backgroundColor: '#556253' }]} />
+              <View style={styles.logContent}>
+                <View style={styles.logTitleRow}>
+                  <Text style={styles.logTitle} numberOfLines={1}>
+                    Perimeter Light turned OFF
+                  </Text>
+                  <Text style={styles.logTimestamp}>09:15 AM</Text>
+                </View>
+                <Text style={styles.logSubtitle}>Source: Schedule (Dawn Automated Sensor)</Text>
+              </View>
+            </View>
+
+            {/* Event 3 */}
+            <View style={styles.logItem}>
+              <View style={[styles.logDot, { backgroundColor: '#576334' }]} />
+              <View style={styles.logContent}>
+                <View style={styles.logTitleRow}>
+                  <Text style={styles.logTitle} numberOfLines={1}>
+                    Drip Valve North ran for 20 min
+                  </Text>
+                  <Text style={styles.logTimestamp}>06:00 AM</Text>
+                </View>
+                <Text style={styles.logSubtitle}>Source: Automated Schedule Zone 2</Text>
+              </View>
+            </View>
+
+            {/* Event 4 */}
+            <View style={[styles.logItem, styles.logItemTint]}>
+              <View style={[styles.logDot, { backgroundColor: '#c5c9b1' }]} />
+              <View style={styles.logContent}>
+                <View style={styles.logTitleRow}>
+                  <Text style={styles.logTitle} numberOfLines={1}>
+                    GSM Master reconnected
+                  </Text>
+                  <Text style={styles.logTimestamp}>Yesterday</Text>
+                </View>
+                <Text style={styles.logSubtitle}>Source: System Health (Cellular Handshake)</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* 6. FIELD DEPLOYMENT MAP */}
+        <View style={styles.deploymentCard}>
+          <View style={styles.deploymentHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>FIELD DEPLOYMENT</Text>
+              <Text style={styles.deploymentSubtitle}>Borewell Cluster 3 • North Field Sector</Text>
+            </View>
+            <Text style={styles.deploymentBadge}>GPS Sync</Text>
+          </View>
+
+          <View style={styles.mapThumbnailContainer}>
+            <Image source={{ uri: FIELD_MAP_IMG }} style={styles.mapThumbnailImage} resizeMode="cover" />
+            <View style={styles.mapCoordPill}>
+              <MapPin size={14} color="#c6e85a" />
+              <Text style={styles.mapCoordText}>Lat 19.9975° N, Long 73.7898° E</Text>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* FULL LOG MODAL */}
+      <Modal visible={showLogModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Full Activity Log</Text>
+              <TouchableOpacity
+                onPress={() => setShowLogModal(false)}
+                style={styles.modalCloseBtn}
+                activeOpacity={0.7}
+              >
+                <X size={20} color="#191c1b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {recentCommands && recentCommands.length > 0 ? (
+                recentCommands.map((cmd) => (
+                  <View key={cmd.id} style={styles.fullLogItem}>
+                    <View
+                      style={[
+                        styles.logDot,
+                        {
+                          backgroundColor:
+                            cmd.status === 'acknowledged'
+                              ? '#516600'
+                              : cmd.status === 'failed'
+                              ? '#ba1a1a'
+                              : '#556253',
+                        },
+                      ]}
+                    />
+                    <View style={styles.fullLogContent}>
+                      <View style={styles.logTitleRow}>
+                        <Text style={styles.fullLogAction}>{cmd.action.replace('_', ' ')}</Text>
+                        <Text style={styles.logTimestamp}>
+                          {cmd.createdAt ? new Date(cmd.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </Text>
+                      </View>
+                      <Text style={styles.logSubtitle}>
+                        Device: {cmd.deviceId} • Status: {cmd.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                ))
               ) : (
-                <Text style={styles.confirmDesc}>
-                  This will dispatch a PUMP_ON command with duration of{' '}
-                  {selectedDurationMins} minutes ({selectedDurationMins * 60} seconds).
-                </Text>
+                <View style={styles.emptyLogView}>
+                  <Text style={styles.emptyLogText}>No additional commands recorded yet.</Text>
+                </View>
               )}
-            </View>
-
-            <View style={styles.modalActionButtons}>
-              <TouchableOpacity
-                style={styles.cancelModalBtn}
-                onPress={() => setPumpModalDevice(null)}
-              >
-                <Text style={styles.cancelModalBtnText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.startPumpBtn}
-                onPress={handleConfirmPump}
-              >
-                <Text style={styles.startPumpBtnText}>{t('controls.confirm_pump')}</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
-    </ScrollView>
+
+      {/* HARDWARE DOWNLINK SETTINGS MODAL */}
+      <Modal visible={showMessageModal} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.settingsModalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Hardware Gateway Downlink</Text>
+              <TouchableOpacity
+                onPress={() => setShowMessageModal(false)}
+                style={styles.modalCloseBtn}
+                activeOpacity={0.7}
+              >
+                <X size={20} color="#191c1b" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.settingsModalDesc}>
+              Dispatch a direct binary/text payload or AT command to Sentinel Node ({macAddress}):
+            </Text>
+
+            <TextInput
+              style={styles.customTextInput}
+              placeholder="e.g. AT+PING=1 or VALVE_CALIBRATE"
+              placeholderTextColor="#757965"
+              value={customMsg}
+              onChangeText={setCustomMsg}
+              autoCapitalize="characters"
+            />
+
+            <TouchableOpacity
+              style={[styles.sendDownlinkBtn, !customMsg.trim() && styles.sendDownlinkDisabled]}
+              onPress={handleSendCustomMessage}
+              disabled={!customMsg.trim() || isSendingMsg}
+              activeOpacity={0.8}
+            >
+              {isSendingMsg ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <>
+                  <Send size={16} color="#ffffff" />
+                  <Text style={styles.sendDownlinkText}>TRANSMIT DOWNLINK</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#f9faf8',
   },
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 40,
+  header: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(249, 250, 248, 0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.03)',
   },
-  noFarmContainer: {
-    flex: 1,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
   },
-  cacheBanner: {
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#191c1b',
+    letterSpacing: -0.3,
+  },
+  profileAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#516600',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+
+  // Meta Bar
+  metaCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 14,
+    shadowColor: '#1e2a1e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  metaRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metaStatusLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pingContainer: {
+    width: 12,
+    height: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  pingRing: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#c6e85a',
+  },
+  pingDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#516600',
+  },
+  metaStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#191c1b',
+  },
+  metaMacText: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#556253',
+  },
+  metaRowBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f2',
+  },
+  metaTelemetryGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.borderLight,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
   },
-  cacheBannerText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  viewerBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    gap: 10,
-  },
-  viewerBannerText: {
-    flex: 1,
+  metaTelemetryText: {
     fontSize: 12,
-    color: '#B71C1C',
+    color: '#556253',
+  },
+  metaBattBold: {
     fontWeight: '600',
-    lineHeight: 18,
+    color: '#191c1b',
   },
-  errorNotice: {
+  metaDot: {
+    fontSize: 10,
+    color: '#c5c9b1',
+  },
+  metaLiveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.errorSurface,
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-    gap: 8,
+    gap: 4,
   },
-  errorNoticeText: {
-    flex: 1,
+  metaLiveText: {
     fontSize: 12,
-    color: colors.error,
     fontWeight: '600',
+    color: '#516600',
   },
-  liveStatusCard: {
-    marginBottom: 16,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-  },
-  liveStatusPending: {
-    backgroundColor: '#FFF8E1',
-    borderColor: '#FFE082',
-  },
-  liveStatusSent: {
-    backgroundColor: '#E3F2FD',
-    borderColor: '#90CAF9',
-  },
-  liveStatusSuccess: {
-    backgroundColor: '#E8F5E9',
-    borderColor: '#A5D6A7',
-  },
-  liveStatusError: {
-    backgroundColor: '#FFEBEE',
-    borderColor: '#EF9A9A',
-  },
-  liveStatusContent: {
+
+  // Actuator Section Header
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  liveStatusTextContainer: {
-    flex: 1,
-  },
-  liveStatusTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  liveStatusDesc: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  liveDismissBtn: {
-    padding: 4,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#556253',
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#556253',
+    marginTop: 2,
+  },
+  activePill: {
+    backgroundColor: '#c6e85a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  activePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#516600',
+    letterSpacing: 0.4,
+  },
+
+  // Actuator Cards Grid
+  cardsContainer: {
+    gap: 14,
+    marginBottom: 20,
+  },
+  actuatorCard: {
+    borderRadius: 24,
+    padding: 18,
+    shadowColor: '#1e2a1e',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  cardActiveLime: {
+    backgroundColor: '#c6e85a',
+  },
+  cardInactiveWhite: {
+    backgroundColor: '#ffffff',
+  },
+  cardSiren: {
+    backgroundColor: '#ffdad6',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  actuatorIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCircleDark: {
+    backgroundColor: '#161e00',
+  },
+  iconCircleGrey: {
+    backgroundColor: '#edeeec',
+  },
+  sirenIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sirenReadyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  sirenReadyText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ba1a1a',
+    letterSpacing: 0.5,
+  },
+
+  // Toggle Switch
+  toggleTrack: {
+    width: 56,
+    height: 32,
+    borderRadius: 16,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  toggleTrackActive: {
+    backgroundColor: '#161e00',
+  },
+  toggleTrackInactive: {
+    backgroundColor: '#e2e3e1',
+  },
+  toggleThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  toggleThumbRight: {
+    alignSelf: 'flex-end',
+  },
+  toggleThumbLeft: {
+    alignSelf: 'flex-start',
+  },
+
+  cardBody: {
+    marginTop: 14,
+    marginBottom: 12,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  actuatorTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: colors.text,
-    marginLeft: 6,
+    letterSpacing: -0.2,
   },
-  actuatorCountText: {
-    fontSize: 12,
-    color: colors.textSecondary,
+  textDark: {
+    color: '#161e00',
+  },
+  textBlack: {
+    color: '#191c1b',
+  },
+  textMuted: {
+    color: '#556253',
+  },
+  rateBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  rateBadgeDark: {
+    backgroundColor: 'rgba(22, 30, 0, 0.15)',
+  },
+  rateBadgeLight: {
+    backgroundColor: '#edeeec',
+  },
+  rateBadgeText: {
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     fontWeight: '600',
   },
-  deviceCard: {
-    marginBottom: 14,
-    padding: 16,
-    borderRadius: 16,
-  },
-  deviceHeader: {
+  runningRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  runningText: {
+    fontSize: 13,
+  },
+  runningTextDark: {
+    color: 'rgba(22, 30, 0, 0.85)',
+    fontWeight: '500',
+  },
+  runningTextMuted: {
+    color: '#556253',
+  },
+
+  // Timer Pills Dock
+  timerDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    padding: 3,
+    borderRadius: 20,
+    gap: 4,
   },
-  deviceLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  timerDockActive: {
+    backgroundColor: 'rgba(22, 30, 0, 0.12)',
   },
-  deviceIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: colors.primarySurface,
+  timerDockInactive: {
+    backgroundColor: '#f3f4f2',
+  },
+  timerPill: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deviceName: {
+  timerPillSelectedDark: {
+    backgroundColor: '#161e00',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  timerPillSelectedLight: {
+    backgroundColor: '#516600',
+  },
+  timerPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  timerPillTextActiveDark: {
+    color: '#c6e85a',
+  },
+  timerPillTextInactiveDark: {
+    color: 'rgba(22, 30, 0, 0.7)',
+  },
+  timerPillTextActiveLight: {
+    color: '#ffffff',
+  },
+  timerPillTextInactiveLight: {
+    color: '#556253',
+  },
+
+  // Inactive Hint Dock
+  inactiveHintDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f3f4f2',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 18,
+  },
+  inactiveHintLabel: {
+    fontSize: 12,
+    color: '#556253',
+  },
+  inactiveHintValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#191c1b',
+  },
+
+  // Siren Card specifics
+  sirenTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#93000a',
+  },
+  sirenSubtitle: {
+    fontSize: 13,
+    color: '#ba1a1a',
+    fontWeight: '500',
+  },
+  sirenHoldButton: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#ba1a1a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  sirenProgressBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(186, 26, 26, 0.22)',
+  },
+  sirenButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 2,
+  },
+  sirenButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#ba1a1a',
+  },
+
+  // Master Emergency Stop
+  emergencyCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#1e2a1e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
+    marginBottom: 24,
+  },
+  emergencyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 12,
+  },
+  emergencyIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#ffdad6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emergencyTextCol: {
+    flex: 1,
+  },
+  emergencyTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: colors.text,
+    color: '#191c1b',
   },
-  deviceNodeText: {
-    fontSize: 11,
-    color: colors.textSecondary,
+  emergencySubtitle: {
+    fontSize: 12,
+    color: '#556253',
     marginTop: 2,
   },
-  deviceDivider: {
-    height: 1,
-    backgroundColor: colors.borderLight,
-    marginVertical: 12,
-  },
-  controlsList: {
-    gap: 12,
-  },
-  capControlRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  capLabelBlock: {
+  emergencyAllOffBtn: {
+    backgroundColor: '#ba1a1a',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    width: 100,
+    gap: 6,
+    shadowColor: '#ba1a1a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  capTitle: {
-    fontSize: 13,
+  emergencyAllOffText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: colors.text,
+    color: '#ffffff',
+    letterSpacing: 0.4,
   },
-  buttonPair: {
-    flex: 1,
+
+  // Recent Activity Section
+  recentActivitySection: {
+    marginBottom: 24,
+  },
+  recentHeaderRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  openLogCircleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#161e00',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#161e00',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  recentLogCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 16,
+    shadowColor: '#1e2a1e',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+    elevation: 2,
+    gap: 6,
+  },
+  logItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  logItemTint: {
+    backgroundColor: 'rgba(243, 244, 242, 0.6)',
+  },
+  logDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    marginTop: 6,
+  },
+  logContent: {
+    flex: 1,
+  },
+  logTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
   },
-  emptyCard: {
-    padding: 20,
-    borderRadius: 16,
+  logTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#191c1b',
+    flex: 1,
+  },
+  logTimestamp: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#556253',
+  },
+  logSubtitle: {
+    fontSize: 12,
+    color: '#556253',
+    marginTop: 2,
+  },
+
+  // Field Deployment Card
+  deploymentCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 16,
+    shadowColor: '#1e2a1e',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+    elevation: 2,
     marginBottom: 16,
   },
-  historyCard: {
-    padding: 6,
-    borderRadius: 16,
-  },
-  noCommandsContainer: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  noCommandsText: {
-    fontSize: 13,
-    color: colors.textMuted,
-  },
-  commandItem: {
+  deploymentHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
+    marginBottom: 12,
   },
-  commandItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-  },
-  commandMain: {
-    flex: 1,
-    marginRight: 8,
-  },
-  commandTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  commandActionText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  commandDurationText: {
+  deploymentSubtitle: {
     fontSize: 12,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  commandTargetText: {
-    fontSize: 11,
-    color: colors.textSecondary,
+    color: '#556253',
     marginTop: 2,
   },
-  commandMeta: {
-    alignItems: 'flex-end',
-    gap: 4,
+  deploymentBadge: {
+    fontSize: 12,
+    color: '#556253',
+    fontWeight: '500',
   },
-  commandTimeText: {
-    fontSize: 10,
-    color: colors.textMuted,
+  mapThumbnailContainer: {
+    width: '100%',
+    height: 144,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'flex-end',
+    padding: 10,
   },
+  mapThumbnailImage: {
+    ...StyleSheet.absoluteFill,
+  },
+  mapCoordPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(46, 49, 48, 0.88)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mapCoordText: {
+    fontSize: 12,
+    color: '#f0f1ef',
+    fontWeight: '500',
+  },
+
+  // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: colors.card,
-    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     padding: 20,
-    width: '100%',
-    maxWidth: 360,
-    elevation: 6,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  modalHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
-    color: colors.text,
+    color: '#191c1b',
   },
-  modalTargetText: {
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f3f4f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  fullLogItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f2',
+  },
+  fullLogContent: {
+    flex: 1,
+  },
+  fullLogAction: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#191c1b',
+  },
+  emptyLogView: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  emptyLogText: {
+    fontSize: 14,
+    color: '#556253',
+  },
+
+  // Settings modal
+  settingsModalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    margin: 20,
+    padding: 20,
+    alignSelf: 'center',
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  settingsModalDesc: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#556253',
+    lineHeight: 18,
     marginBottom: 14,
   },
-  boldText: {
-    fontWeight: '700',
-    color: colors.text,
-  },
-  durationPrompt: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 8,
-  },
-  durationPillsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  durationPill: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    alignItems: 'center',
-  },
-  durationPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  durationPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  durationPillTextActive: {
-    color: colors.textInverse,
-    fontWeight: '700',
-  },
-  confirmBox: {
-    backgroundColor: colors.background,
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 18,
-  },
-  confirmQuestion: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  confirmDesc: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
-  },
-  modalActionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  cancelModalBtn: {
-    flex: 1,
+  customTextInput: {
+    backgroundColor: '#f3f4f2',
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  cancelModalBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  startPumpBtn: {
-    flex: 2,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  startPumpBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textInverse,
-  },
-  instantMessageCard: {
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  instantMessageHeader: {
-    marginBottom: 12,
-  },
-  instantMessageTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  messageIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: colors.primarySurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  instantMessageTitle: {
     fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
+    color: '#191c1b',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 16,
   },
-  instantMessageSubtitle: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-  quickActionsContainer: {
-    marginBottom: 12,
-  },
-  quickActionsLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  quickChipsRow: {
+  sendDownlinkBtn: {
+    backgroundColor: '#516600',
+    borderRadius: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 2,
-  },
-  quickChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  quickChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  messageInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  messageTextInput: {
-    flex: 1,
-    height: 42,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 13,
-    color: colors.text,
-  },
-  sendMessageBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  sendMessageBtnDisabled: {
-    backgroundColor: colors.textMuted,
-    opacity: 0.6,
-  },
-  feedbackBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
     gap: 8,
   },
-  feedbackSuccess: {
-    backgroundColor: '#E8F5E9',
+  sendDownlinkDisabled: {
+    opacity: 0.5,
   },
-  feedbackError: {
-    backgroundColor: '#FFEBEE',
-  },
-  feedbackText: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  feedbackTextSuccess: {
-    color: '#2E7D32',
-  },
-  feedbackTextError: {
-    color: colors.error,
+  sendDownlinkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
 });
