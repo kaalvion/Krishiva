@@ -24,27 +24,25 @@ const firebaseConfig = {
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-const storage = (AsyncStorage as unknown as { default: typeof AsyncStorage })?.default || AsyncStorage;
-
 let authInstance: Auth;
 try {
+  authInstance = getAuth(app);
+} catch {
+  const storage = (AsyncStorage as any)?.default ?? AsyncStorage;
   authInstance = initializeAuth(app, {
     persistence: getReactNativePersistence(storage),
   });
-} catch (error: unknown) {
-  // If already initialized (e.g. during Fast Refresh / hot reload), retrieve the existing instance
-  authInstance = getAuth(app);
 }
 
 export const auth = authInstance;
 
 let dbInstance: Firestore;
 try {
+  dbInstance = getFirestore(app);
+} catch {
   dbInstance = initializeFirestore(app, {
     experimentalAutoDetectLongPolling: true,
   });
-} catch {
-  dbInstance = getFirestore(app);
 }
 
 export const db = dbInstance;
