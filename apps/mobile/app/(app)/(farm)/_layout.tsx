@@ -9,6 +9,7 @@ import {
   Bell,
   ArrowLeft,
   Radio,
+  User,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useLiveAlerts } from '../../../src/hooks/live';
@@ -105,6 +106,14 @@ export default function FarmTabsLayout() {
             fontWeight: '700',
           },
           tabBarIcon: ({ color, size }) => <Bell size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          headerTitle: 'Profile & Settings',
+          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
       />
       <Tabs.Screen
