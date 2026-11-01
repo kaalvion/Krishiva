@@ -451,6 +451,54 @@ export const farmsRoutes: FastifyPluginAsync = async (fastify) => {
       return members;
     }
   );
+
+  /**
+   * PATCH /api/farms/:farmId
+   * Updates farm metadata (name, areaAcres, cropType, crops).
+   */
+  fastify.patch<{
+    Params: { farmId: string };
+    Body: { name?: string; areaAcres?: number; cropType?: string; crops?: string[] };
+  }>(
+    '/:farmId',
+    async (request) => {
+      const uid = request.user?.uid;
+      if (!uid) throw new HttpError(401, 'Unauthorized');
+      const { farmId } = request.params;
+      await requireFarmMember(farmId, uid, 'admin');
+
+      const updates: Record<string, any> = { updatedAt: new Date().toISOString() };
+      if (request.body.name) updates.name = request.body.name.trim();
+      if (request.body.areaAcres !== undefined) updates.areaAcres = Number(request.body.areaAcres);
+      if (request.body.cropType) updates.cropType = request.body.cropType;
+      if (request.body.crops) updates.crops = request.body.crops;
+
+      const farmRef = firestore().doc(`farms/${farmId}`);
+      await farmRef.set(updates, { merge: true });
+      const snap = await farmRef.get();
+      return { id: farmId, ...snap.data() };
+    }
+  );
+
+  /**
+   * DELETE /api/farms/:farmId
+   * Purges a farm profile (owner only).
+   */
+  fastify.delete<{
+    Params: { farmId: string };
+  }>(
+    '/:farmId',
+    async (request) => {
+      const uid = request.user?.uid;
+      if (!uid) throw new HttpError(401, 'Unauthorized');
+      const { farmId } = request.params;
+      await requireFarmMember(farmId, uid, 'owner');
+
+      const farmRef = firestore().doc(`farms/${farmId}`);
+      await farmRef.delete();
+      return { success: true, message: `Farm ${farmId} purged successfully` };
+    }
+  );
 };
 
 export default farmsRoutes;

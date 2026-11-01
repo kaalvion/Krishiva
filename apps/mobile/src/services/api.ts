@@ -156,6 +156,28 @@ export async function getFarm(farmId: string): Promise<Farm> {
 }
 
 /**
+ * Updates farm details (name, area, crops).
+ */
+export async function updateFarm(
+  farmId: string,
+  data: { name?: string; areaAcres?: number; cropType?: string; crops?: string[] }
+): Promise<Farm> {
+  return request<Farm>(`/api/farms/${farmId}`, {
+    method: 'PATCH',
+    body: data,
+  });
+}
+
+/**
+ * Permanently removes a farm.
+ */
+export async function deleteFarm(farmId: string): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(`/api/farms/${farmId}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
  * Fetches all registered IoT devices for a farm.
  */
 export async function getDevices(farmId: string): Promise<Device[]> {

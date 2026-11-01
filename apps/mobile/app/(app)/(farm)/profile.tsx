@@ -140,7 +140,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.editButton}
-            onPress={() => Alert.alert('Edit Profile', 'Profile editing options')}
+            onPress={() => router.push('/(app)/(farm)/edit-profile')}
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="Edit Profile"
