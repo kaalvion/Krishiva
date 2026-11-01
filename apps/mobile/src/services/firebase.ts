@@ -24,11 +24,18 @@ const firebaseConfig = {
 
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
+const storageInstance =
+  // @ts-expect-error fallback in case default export is wrapped
+  ReactNativeAsyncStorage?.default ?? ReactNativeAsyncStorage;
+
 let authInstance: Auth;
 try {
-  authInstance = initializeAuth(app, {
-    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
-  });
+  const persistence =
+    typeof getReactNativePersistence === 'function'
+      ? getReactNativePersistence(storageInstance)
+      : undefined;
+
+  authInstance = initializeAuth(app, persistence ? { persistence } : undefined);
 } catch {
   authInstance = getAuth(app);
 }

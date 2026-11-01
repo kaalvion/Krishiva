@@ -15,5 +15,19 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 
-module.exports = config;
+// 3. Resolve .cjs files for Firebase modular SDK
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'cjs'];
 
+// 4. Force singleton resolution to avoid duplicate instances in monorepo
+config.resolver.extraNodeModules = {
+  firebase: path.resolve(monorepoRoot, 'node_modules/firebase'),
+  '@firebase/app': path.resolve(monorepoRoot, 'node_modules/@firebase/app'),
+  '@firebase/auth': path.resolve(monorepoRoot, 'node_modules/@firebase/auth'),
+  '@firebase/firestore': path.resolve(monorepoRoot, 'node_modules/@firebase/firestore'),
+  '@react-native-async-storage/async-storage': path.resolve(
+    monorepoRoot,
+    'node_modules/@react-native-async-storage/async-storage'
+  ),
+};
+
+module.exports = config;
