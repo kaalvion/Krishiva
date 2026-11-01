@@ -67,6 +67,12 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="setup-complete"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="(farm)"
         options={{
           headerShown: false,

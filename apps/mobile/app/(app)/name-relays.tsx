@@ -63,16 +63,13 @@ export default function NameRelaysScreen() {
       const storageKey = `@relay_names_${deviceId}`;
       await AsyncStorage.setItem(storageKey, JSON.stringify(relayNames));
 
-      Alert.alert(
-        'Relays Configured',
-        'Your custom relay output names have been saved successfully.',
-        [
-          {
-            text: 'View Devices',
-            onPress: () => router.replace('/(app)/(farm)/devices'),
-          },
-        ]
-      );
+      router.push({
+        pathname: '/(app)/setup-complete',
+        params: {
+          deviceId,
+          farmId: params.farmId || '',
+        },
+      });
     } catch {
       Alert.alert('Error', 'Could not save relay configuration locally.');
     } finally {
