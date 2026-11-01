@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Check, PlusCircle, CloudOff } from 'lucide-react-native';
+import { Check, PlusCircle, CloudOff, PenTool } from 'lucide-react-native';
 import { useCreateFarm } from '../../src/hooks/useFarms';
 import { useServerStatus, ServerStatusBanner } from '../../src/context/ServerStatusContext';
 import { Button } from '../../src/components/Button';
@@ -183,6 +183,16 @@ export default function CreateFarmScreen() {
             )}
           />
 
+          {/* Draw on Map Action Button */}
+          <TouchableOpacity
+            style={styles.drawMapBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/(app)/(farm)/draw-field')}
+          >
+            <PenTool size={16} color="#516600" />
+            <Text style={styles.drawMapBtnText}>Draw on Map (Precision Boundary)</Text>
+          </TouchableOpacity>
+
           <View style={styles.divider} />
           <Text style={styles.sectionTitle}>Geographical Coordinates</Text>
 
@@ -335,5 +345,20 @@ const styles = StyleSheet.create({
     color: colors.error,
     marginTop: 4,
     fontWeight: '500',
+  },
+  drawMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#d8e7d4',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginTop: 10,
+  },
+  drawMapBtnText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 13,
+    color: '#131e13',
   },
 });
