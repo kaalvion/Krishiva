@@ -118,6 +118,7 @@ export function useLiveAlerts(
               acknowledgedAt: data.acknowledgedAt ?? null,
               acknowledgedBy: data.acknowledgedBy ?? null,
               createdAt: data.createdAt ?? new Date().toISOString(),
+              aiExplanation: data.aiExplanation ?? null,
             };
           });
 

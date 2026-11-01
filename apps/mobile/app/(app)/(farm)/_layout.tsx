@@ -102,6 +102,7 @@ export default function FarmTabsLayout() {
       <Tabs.Screen
         name="alerts"
         options={{
+          headerShown: false,
           title: 'Alerts',
           headerTitle: 'Alerts & Incidents',
           tabBarBadge: badgeValue,
