@@ -48,6 +48,9 @@ import {
   HealthGaugeCard,
   WeatherCard,
   FieldHeatmapCard,
+  PlotsCarousel,
+  QuickControlsCard,
+  TodayScheduleCard,
 } from '../../../src/components/dashboard';
 
 export default function DashboardScreen() {
@@ -194,34 +197,47 @@ export default function DashboardScreen() {
 
       {/* 2. Status Strip (GSM Master status & Sync) */}
       <StatusStrip
-        masterStatus={onlineCount > 0 ? 'GSM Master Online' : 'GSM Master Connecting'}
+        masterStatus={onlineCount > 0 ? 'GSM Master: Online' : 'GSM Master: Connecting'}
         syncedLabel={freshness.label}
         isOnline={freshness.isLive}
       />
 
-      {/* 3. AI Brief Card (Dark Forest Green) */}
+      {/* 3. Hero Farm Map Overview Card + Grok AI Brief */}
       <AiBriefCard
         brief={brief}
         translatedBrief={translatedBrief}
         aiEnabled={aiEnabled}
+        plotName="Plot 4B"
+        hectares="18.2 ha"
       />
 
-      {/* 4. Health Gauge Card (White card, Lime score) */}
+      {/* 4. Agricultural Plots Horizontal Carousel */}
+      <PlotsCarousel />
+
+      {/* 5. Quick Controls 2x2 Grid */}
+      <QuickControlsCard />
+
+      {/* 6. Weather Strip (Compact mini-metrics) */}
+      <WeatherCard
+        weather={weather}
+        avgHumidity={avgHumidity}
+        farmName={activeFarm.name}
+        plotName="Plot 4B"
+      />
+
+      {/* 7. Today's Schedule Card */}
+      <TodayScheduleCard />
+
+      {/* 8. Health Gauge Card */}
       <HealthGaugeCard
         health={health}
         loading={healthLoading}
       />
 
-      {/* 5. Weather Card (Compact mini-metrics) */}
-      <WeatherCard
-        weather={weather}
-        avgHumidity={avgHumidity}
-      />
-
-      {/* 6. Field Heatmap Card (White card with subtle container) */}
+      {/* 9. Field Heatmap Card */}
       <FieldHeatmapCard cells={cells} />
 
-      {/* 7. Devices Section Title */}
+      {/* 10. Devices Section Title */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Wifi size={18} color={colors.primaryDark} />

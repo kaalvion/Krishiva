@@ -4,4 +4,6 @@ export { AiBriefCard } from './AiBriefCard';
 export { HealthGaugeCard } from './HealthGaugeCard';
 export { WeatherCard } from './WeatherCard';
 export { FieldHeatmapCard } from './FieldHeatmapCard';
-
+export { PlotsCarousel } from './PlotsCarousel';
+export { QuickControlsCard } from './QuickControlsCard';
+export { TodayScheduleCard } from './TodayScheduleCard';
