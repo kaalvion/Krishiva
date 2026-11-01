@@ -100,6 +100,14 @@ export default function FarmTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="reports"
+        options={{
+          headerShown: false,
+          title: 'Reports',
+          tabBarIcon: ({ color, size }) => <LineChart size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="alerts"
         options={{
           headerShown: false,
