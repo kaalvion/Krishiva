@@ -8,6 +8,7 @@ import {
   Calendar,
   Bell,
   ArrowLeft,
+  Radio,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useLiveAlerts } from '../../../src/hooks/live';
@@ -52,11 +53,11 @@ export default function FarmTabsLayout() {
           paddingBottom: 8,
           paddingTop: 6,
         },
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: colors.primaryDark,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600',
+          fontFamily: 'Manrope_600SemiBold',
         },
       }}
     >
@@ -69,11 +70,11 @@ export default function FarmTabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="analytics"
+        name="devices"
         options={{
-          title: 'Analytics',
-          headerTitle: 'Analytics',
-          tabBarIcon: ({ color, size }) => <LineChart size={size} color={color} />,
+          title: 'Devices',
+          headerTitle: 'Connected Devices',
+          tabBarIcon: ({ color, size }) => <Radio size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -104,6 +105,15 @@ export default function FarmTabsLayout() {
             fontWeight: '700',
           },
           tabBarIcon: ({ color, size }) => <Bell size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="analytics"
+        options={{
+          href: null,
+          title: 'Analytics',
+          headerTitle: 'Analytics',
+          tabBarIcon: ({ color, size }) => <LineChart size={size} color={color} />,
         }}
       />
       <Tabs.Screen
