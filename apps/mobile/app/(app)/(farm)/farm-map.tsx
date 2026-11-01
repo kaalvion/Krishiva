@@ -212,6 +212,19 @@ export default function FarmMapScreen() {
 
         <View style={styles.topAppRight}>
           <TouchableOpacity
+            style={styles.addFieldBtn}
+            onPress={() =>
+              router.push({
+                pathname: '/(app)/(farm)/new-field',
+                params: { farmId },
+              })
+            }
+            activeOpacity={0.8}
+          >
+            <Plus size={14} color="#161e00" strokeWidth={2.5} />
+            <Text style={styles.addFieldBtnText}>New Field</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.iconButton}
             onPress={() => showToast('Layer options: Satellite + Soil Hydrology')}
           >
@@ -747,6 +760,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  addFieldBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#c6e85a',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    shadowColor: '#516600',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  addFieldBtnText: {
+    fontFamily: 'Manrope_700Bold',
+    fontSize: 11.5,
+    color: '#161e00',
+    letterSpacing: 0.2,
   },
   iconButton: {
     width: 38,
