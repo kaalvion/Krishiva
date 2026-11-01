@@ -1,4 +1,5 @@
-import { auth } from './firebase';
+import { doc, updateDoc, writeBatch, collection, where, query, getDocs } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import { env } from '../config/env';
 import {
   ApiError,
@@ -284,25 +285,66 @@ export async function getAlerts(
 
 /**
  * Acknowledges a single alert (idempotent, returns 200 with updated alert).
+ * Attempts backend API first, with graceful real-time fallback to direct Firestore update.
  */
 export async function acknowledgeAlert(
   farmId: string,
   alertId: string
 ): Promise<AlertItem> {
-  return request<AlertItem>(`/api/farms/${farmId}/alerts/${alertId}/acknowledge`, {
-    method: 'POST',
-  });
+  try {
+    return await request<AlertItem>(`/api/farms/${farmId}/alerts/${alertId}/acknowledge`, {
+      method: 'POST',
+    });
+  } catch (err: unknown) {
+    // Direct Firestore update fallback if backend server is unreachable
+    const user = auth.currentUser;
+    const alertRef = doc(db, 'farms', farmId, 'alerts', alertId);
+    const now = new Date().toISOString();
+    await updateDoc(alertRef, {
+      acknowledged: true,
+      acknowledgedAt: now,
+      acknowledgedBy: user?.uid || 'user',
+    });
+    return {
+      id: alertId,
+      acknowledged: true,
+      acknowledgedAt: now,
+      acknowledgedBy: user?.uid,
+    } as AlertItem;
+  }
 }
 
 /**
  * Acknowledges all active alerts for a farm.
+ * Attempts backend API first, with graceful real-time fallback to direct Firestore batch update.
  */
 export async function acknowledgeAllAlerts(
   farmId: string
 ): Promise<{ count: number }> {
-  return request<{ count: number }>(`/api/farms/${farmId}/alerts/acknowledge-all`, {
-    method: 'POST',
-  });
+  try {
+    return await request<{ count: number }>(`/api/farms/${farmId}/alerts/acknowledge-all`, {
+      method: 'POST',
+    });
+  } catch (err: unknown) {
+    // Direct Firestore batch update fallback
+    const user = auth.currentUser;
+    const now = new Date().toISOString();
+    const q = query(
+      collection(db, 'farms', farmId, 'alerts'),
+      where('acknowledged', '==', false)
+    );
+    const snap = await getDocs(q);
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => {
+      batch.update(d.ref, {
+        acknowledged: true,
+        acknowledgedAt: now,
+        acknowledgedBy: user?.uid || 'user',
+      });
+    });
+    await batch.commit();
+    return { count: snap.size };
+  }
 }
 
 /**

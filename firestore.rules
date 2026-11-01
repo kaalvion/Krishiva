@@ -110,7 +110,9 @@ service cloud.firestore {
       // Environmental alerts and incidents
       match /alerts/{alertId} {
         allow read: if isMember(farmId);
-        allow write: if false;
+        allow update: if isOwnerOrAdmin(farmId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedAt', 'acknowledgedBy']);
+        allow create, delete: if false;
       }
 
       // Configured irrigation and device schedules

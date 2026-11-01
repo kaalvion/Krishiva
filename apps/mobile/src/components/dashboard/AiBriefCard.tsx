@@ -147,3 +147,4 @@ const styles = StyleSheet.create({
     color: '#C6E85A',
   },
 });
+

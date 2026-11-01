@@ -65,10 +65,6 @@ export default function AlertsScreen() {
   };
 
   const handleAcknowledgeSingle = async (alertId: string) => {
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
-      return;
-    }
     try {
       setAcknowledgingId(alertId);
       await acknowledgeAlertMutation.mutateAsync(alertId);
@@ -81,10 +77,6 @@ export default function AlertsScreen() {
   };
 
   const handleAcknowledgeAll = () => {
-    if (!serverOnline) {
-      Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
-      return;
-    }
     Alert.alert(
       'Acknowledge All Alerts',
       'Are you sure you want to mark all active alerts as acknowledged for this farm?',
@@ -243,18 +235,18 @@ export default function AlertsScreen() {
           {/* Action button: only for owners/admins on unacknowledged alerts */}
           {!item.acknowledged && isOwnerOrAdmin && (
             <TouchableOpacity
-              style={[styles.ackButton, !serverOnline && { opacity: 0.5 }]}
+              style={styles.ackButton}
               onPress={() => handleAcknowledgeSingle(item.id)}
-              disabled={isAcking || !serverOnline}
+              disabled={isAcking}
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel="Acknowledge alert"
             >
               {isAcking ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <ActivityIndicator size="small" color={colors.primaryDark} />
               ) : (
                 <>
-                  <Check size={14} color={colors.primary} />
+                  <Check size={14} color={colors.primaryDark} />
                   <Text style={styles.ackButtonText}>{t('alerts.acknowledge_btn')}</Text>
                 </>
               )}
@@ -344,16 +336,16 @@ export default function AlertsScreen() {
         {/* Top Action: Acknowledge All for owners/admins when active alerts exist */}
         {activeTab === 'active' && isOwnerOrAdmin && alerts.length > 0 && (
           <TouchableOpacity
-            style={[styles.ackAllButton, !serverOnline && { opacity: 0.5 }]}
+            style={styles.ackAllButton}
             onPress={handleAcknowledgeAll}
-            disabled={acknowledgeAllMutation.isPending || !serverOnline}
+            disabled={acknowledgeAllMutation.isPending}
             activeOpacity={0.7}
           >
             {acknowledgeAllMutation.isPending ? (
-              <ActivityIndicator size="small" color={colors.primary} />
+              <ActivityIndicator size="small" color={colors.primaryDark} />
             ) : (
               <>
-                <CheckCheck size={16} color={colors.primary} />
+                <CheckCheck size={16} color={colors.primaryDark} />
                 <Text style={styles.ackAllButtonText}>{t('alerts.ack_all')}</Text>
               </>
             )}
@@ -479,16 +471,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: colors.primarySurface,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 99,
+    backgroundColor: colors.primary,
   },
   ackAllButtonText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Manrope_700Bold',
     color: colors.primaryDark,
   },
   listContent: {
@@ -606,17 +596,15 @@ const styles = StyleSheet.create({
   ackButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    backgroundColor: colors.primarySurface,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 99,
+    backgroundColor: colors.primary,
   },
   ackButtonText: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontFamily: 'Manrope_700Bold',
     color: colors.primaryDark,
   },
   resolvedRow: {
