@@ -458,7 +458,7 @@ export const farmsRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.patch<{
     Params: { farmId: string };
-    Body: { name?: string; areaAcres?: number; cropType?: string; crops?: string[] };
+    Body: { name?: string; areaAcres?: number; cropType?: string; crops?: string[]; plantingDate?: string };
   }>(
     '/:farmId',
     async (request) => {
@@ -472,6 +472,7 @@ export const farmsRoutes: FastifyPluginAsync = async (fastify) => {
       if (request.body.areaAcres !== undefined) updates.areaAcres = Number(request.body.areaAcres);
       if (request.body.cropType) updates.cropType = request.body.cropType;
       if (request.body.crops) updates.crops = request.body.crops;
+      if (request.body.plantingDate) updates.plantingDate = request.body.plantingDate;
 
       const farmRef = firestore().doc(`farms/${farmId}`);
       await farmRef.set(updates, { merge: true });

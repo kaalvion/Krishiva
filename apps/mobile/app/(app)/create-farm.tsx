@@ -201,11 +201,11 @@ export default function CreateFarmScreen() {
       const farmId = result?.farmId;
       if (farmId) {
         router.push({
-          pathname: '/(app)/(farm)/draw-field',
+          pathname: '/(app)/farm-setup-step2',
           params: { farmId },
         });
       } else {
-        router.push('/(app)/(farm)/draw-field');
+        router.push('/(app)/farm-setup-step2');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not create farm.';
@@ -272,7 +272,7 @@ export default function CreateFarmScreen() {
 
             <TouchableOpacity
               style={styles.skipBtn}
-              onPress={() => router.push('/(app)/(farm)/draw-field')}
+              onPress={() => router.push('/(app)/farm-setup-step2')}
               activeOpacity={0.7}
             >
               <Text style={styles.skipBtnText}>Skip</Text>

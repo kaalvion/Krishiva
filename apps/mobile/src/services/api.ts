@@ -160,7 +160,7 @@ export async function getFarm(farmId: string): Promise<Farm> {
  */
 export async function updateFarm(
   farmId: string,
-  data: { name?: string; areaAcres?: number; cropType?: string; crops?: string[] }
+  data: { name?: string; areaAcres?: number; cropType?: string; crops?: string[]; plantingDate?: string }
 ): Promise<Farm> {
   return request<Farm>(`/api/farms/${farmId}`, {
     method: 'PATCH',

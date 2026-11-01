@@ -44,8 +44,13 @@ export default function AppLayout() {
       <Stack.Screen
         name="create-farm"
         options={{
-          title: 'Add New Farm',
-          headerBackTitle: 'Farms',
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="farm-setup-step2"
+        options={{
+          headerShown: false,
         }}
       />
       <Stack.Screen
