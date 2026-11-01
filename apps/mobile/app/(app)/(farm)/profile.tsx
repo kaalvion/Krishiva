@@ -104,11 +104,19 @@ export default function ProfileScreen() {
   const getLanguageLabel = () => {
     switch (language) {
       case 'hi':
-        return 'हिंदी (Hindi)';
+        return 'हिन्दी (Hindi)';
       case 'mr':
         return 'मराठी (Marathi)';
+      case 'ta':
+        return 'தமிழ் (Tamil)';
+      case 'te':
+        return 'తెలుగు (Telugu)';
+      case 'pa':
+        return 'ਪੰਜਾਬੀ (Punjabi)';
+      case 'bn':
+        return 'বাংলা (Bengali)';
       default:
-        return 'English (मराठी)';
+        return 'English';
     }
   };
 
@@ -477,7 +485,7 @@ export default function ProfileScreen() {
             {/* Item 4: Language (Hooked to LanguageContext) */}
             <TouchableOpacity
               style={styles.configRow}
-              onPress={handleLanguageSelect}
+              onPress={() => router.push('/(app)/(farm)/language')}
               activeOpacity={0.7}
             >
               <View style={styles.configLeft}>

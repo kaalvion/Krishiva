@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from '../i18n/i18n';
 
-export type SupportedLanguage = 'en' | 'hi' | 'mr';
+export type SupportedLanguage = 'en' | 'hi' | 'mr' | 'ta' | 'te' | 'pa' | 'bn';
 
 interface LanguageContextType {
   language: SupportedLanguage;
@@ -25,8 +25,9 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     const loadStoredLanguage = async () => {
       try {
         const stored = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
-        if (stored === 'en' || stored === 'hi' || stored === 'mr') {
-          setLanguage(stored);
+        const validLangs: SupportedLanguage[] = ['en', 'hi', 'mr', 'ta', 'te', 'pa', 'bn'];
+        if (stored && validLangs.includes(stored as SupportedLanguage)) {
+          setLanguage(stored as SupportedLanguage);
           await i18n.changeLanguage(stored);
         } else {
           setLanguage('en');

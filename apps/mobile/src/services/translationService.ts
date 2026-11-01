@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type TargetLanguage = 'en' | 'hi' | 'mr';
+export type TargetLanguage = 'en' | 'hi' | 'mr' | 'ta' | 'te' | 'pa' | 'bn';
 
 // Memory cache to avoid repeated asynchronous disk lookups
 const memoryCache = new Map<string, string>();

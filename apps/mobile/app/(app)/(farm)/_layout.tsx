@@ -149,6 +149,14 @@ export default function FarmTabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="language"
+        options={{
+          href: null,
+          headerShown: false,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
     </Tabs>
   );
 }

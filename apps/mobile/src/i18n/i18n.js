@@ -8,6 +8,10 @@ const resources = {
   en: { translation: en },
   hi: { translation: hi },
   mr: { translation: mr },
+  ta: { translation: en },
+  te: { translation: en },
+  pa: { translation: en },
+  bn: { translation: en },
 };
 
 i18n
