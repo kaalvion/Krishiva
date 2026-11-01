@@ -51,7 +51,7 @@ export const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={isOutline ? colors.primary : colors.textInverse}
+          color={isOutline ? colors.primaryDark : '#1E2A1E'}
         />
       ) : (
         <>
@@ -61,6 +61,7 @@ export const Button: React.FC<ButtonProps> = ({
               styles.text,
               isOutline && styles.textOutline,
               isSecondary && styles.textSecondary,
+              isDanger && styles.textDanger,
               icon ? styles.textWithIcon : undefined,
               textStyle,
             ]}
@@ -76,27 +77,27 @@ export const Button: React.FC<ButtonProps> = ({
 const styles = StyleSheet.create({
   base: {
     height: 52,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
+    backgroundColor: '#C6E85A',
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    shadowColor: colors.shadow,
+    shadowColor: '#1E2A1E',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     elevation: 2,
   },
   secondary: {
-    backgroundColor: colors.primarySurface,
+    backgroundColor: colors.surfaceContainer,
     elevation: 0,
     shadowOpacity: 0,
   },
   outline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: '#C6E85A',
     elevation: 0,
     shadowOpacity: 0,
   },
@@ -107,16 +108,20 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   text: {
-    color: colors.textInverse,
+    color: '#1E2A1E',
+    fontFamily: 'Manrope_600SemiBold',
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.3,
   },
   textOutline: {
-    color: colors.primary,
+    color: colors.primaryDark,
   },
   textSecondary: {
     color: colors.primaryDark,
+  },
+  textDanger: {
+    color: '#ffffff',
   },
   textWithIcon: {
     marginLeft: 8,

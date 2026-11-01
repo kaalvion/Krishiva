@@ -12,7 +12,7 @@ export const Badge: React.FC<BadgeProps> = ({ label, variant = 'neutral', style 
   const getColors = () => {
     switch (variant) {
       case 'success':
-        return { bg: colors.primarySurface, text: colors.primaryDark };
+        return { bg: '#EAF8D2', text: colors.primaryDark };
       case 'warning':
         return { bg: '#FFF3E0', text: colors.warning };
       case 'danger':
@@ -34,14 +34,15 @@ export const Badge: React.FC<BadgeProps> = ({ label, variant = 'neutral', style 
 
 const styles = StyleSheet.create({
   badge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 99,
     alignSelf: 'flex-start',
   },
   text: {
     fontSize: 12,
     fontWeight: '600',
+    fontFamily: 'Manrope_600SemiBold',
     textTransform: 'capitalize',
   },
 });

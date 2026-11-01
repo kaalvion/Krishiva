@@ -12,15 +12,15 @@ export const Card: React.FC<ViewProps> = ({ style, children, ...props }) => {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: colors.borderLight,
     padding: 16,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 24,
     elevation: 2,
   },
 });

@@ -1,30 +1,33 @@
 export const colors = {
-  primary: '#2E7D32',
-  primaryDark: '#1B5E20',
-  primaryLight: '#4CAF50',
-  primarySurface: '#E8F5E9',
-  
-  background: '#F8FAF8',
-  card: '#FFFFFF',
-  
-  text: '#1C2826',
-  textSecondary: '#5F7161',
-  textMuted: '#8D9F87',
-  textInverse: '#FFFFFF',
-  
-  border: '#E0E6E0',
-  borderLight: '#EDF2ED',
-  
-  accent: '#F9A825',
+  // Brand Precision Agriculture tokens (Lime & Forest Green theme)
+  primary: '#C6E85A', // Brand Primary (Lime)
+  primaryDark: '#1E2A1E', // Brand Dark (Forest Green)
+  primaryLight: '#D9F284',
+  primarySurface: '#f3f4f2', // Surface Container (Off-white)
+
+  background: '#f9faf8', // Scaffold Background
+  card: '#ffffff', // Surface (Cards)
+  surface: '#ffffff',
+  surfaceContainer: '#f3f4f2', // Surface Container (Off-white)
+
+  text: '#191c1b', // Brand Text Dark
+  textSecondary: '#556253', // Brand Text Secondary
+  textMuted: '#70796E',
+  textInverse: '#1E2A1E', // Dark text on Lime button
+
+  border: '#E1E4DF',
+  borderLight: '#EDF0EB',
+
+  accent: '#C6E85A',
   success: '#2E7D32',
-  warning: '#EF6C00',
-  error: '#D32F2F',
-  errorSurface: '#FFEBEE',
-  
+  warning: '#EF6C00', // Warning
+  error: '#ba1a1a', // Error/Offline
+  errorSurface: '#FFDAD6',
+
   online: '#2E7D32',
-  offline: '#8D9F87',
-  
-  shadow: '#000000',
+  offline: '#ba1a1a', // Error/Offline
+
+  shadow: '#1E2A1E',
 } as const;
 
 export type ThemeColors = typeof colors;

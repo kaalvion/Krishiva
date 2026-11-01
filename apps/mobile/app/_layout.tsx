@@ -1,9 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import {
+  useFonts,
+  Manrope_300Light,
+  Manrope_400Regular,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+} from '@expo-google-fonts/manrope';
 import { AlertTriangle } from 'lucide-react-native';
 import { AuthProvider } from '../src/hooks/useAuth';
 import { FarmProvider } from '../src/context/FarmContext';
@@ -12,6 +20,9 @@ import { LanguageProvider } from '../src/context/LanguageContext';
 import '../src/i18n/i18n';
 import { getMissingEnvVars } from '../src/config/env';
 import { colors } from '../src/theme/colors';
+
+// Keep splash screen visible while loading fonts
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +34,25 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_300Light,
+    Manrope_400Regular,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+  });
+
   const missingEnvVars = getMissingEnvVars();
+
+  useEffect(() => {
+    if (fontsLoaded || fontError || missingEnvVars.length > 0) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError, missingEnvVars.length]);
+
+  // Keep splash screen while fonts are resolving
+  if (!fontsLoaded && !fontError && missingEnvVars.length === 0) {
+    return null;
+  }
 
   if (missingEnvVars.length > 0) {
     return (
