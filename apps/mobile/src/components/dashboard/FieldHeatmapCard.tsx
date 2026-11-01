@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Layers } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Layers, ArrowUpRight } from 'lucide-react-native';
 import { FieldHeatmap } from '../FieldHeatmap';
 import { colors } from '../../theme/colors';
 import type { HeatmapCell } from '../../types';
@@ -10,21 +11,34 @@ interface FieldHeatmapCardProps {
 }
 
 export const FieldHeatmapCard: React.FC<FieldHeatmapCardProps> = ({ cells }) => {
+  const router = useRouter();
+
   return (
     <View style={styles.card}>
-      <View style={styles.headerRow}>
+      <TouchableOpacity
+        style={styles.headerRow}
+        activeOpacity={0.8}
+        onPress={() => router.push('/(app)/(farm)/farm-map')}
+      >
         <View style={styles.titleRow}>
           <View style={styles.iconCircle}>
             <Layers size={16} color={colors.primaryDark} />
           </View>
           <Text style={styles.cardTitle}>Precision Field Grid</Text>
         </View>
-        <Text style={styles.cellsCount}>{cells.length} Zones</Text>
-      </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={styles.cellsCount}>{cells.length} Zones</Text>
+          <ArrowUpRight size={14} color={colors.primaryDark} />
+        </View>
+      </TouchableOpacity>
 
-      <View style={styles.mapContainer}>
+      <TouchableOpacity
+        style={styles.mapContainer}
+        activeOpacity={0.9}
+        onPress={() => router.push('/(app)/(farm)/farm-map')}
+      >
         <FieldHeatmap cells={cells} />
-      </View>
+      </TouchableOpacity>
     </View>
   );
 };

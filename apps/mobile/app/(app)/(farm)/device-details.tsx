@@ -1987,3 +1987,4 @@ const styles = StyleSheet.create({
     color: '#191c1b',
   },
 });
+
