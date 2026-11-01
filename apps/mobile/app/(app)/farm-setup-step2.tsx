@@ -1197,3 +1197,4 @@ const styles = StyleSheet.create({
     color: '#556253',
   },
 });
+

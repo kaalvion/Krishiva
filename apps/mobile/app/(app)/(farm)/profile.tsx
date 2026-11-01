@@ -535,12 +535,7 @@ export default function ProfileScreen() {
             {/* Item 5: Help & Support */}
             <TouchableOpacity
               style={styles.configRow}
-              onPress={() =>
-                Alert.alert(
-                  'Help & Support',
-                  'Kisan Helpline: 1800-180-1551\nSupport Email: support@krishiva.io\nLoRa Mesh Setup Guide available in docs.'
-                )
-              }
+              onPress={() => router.push('/(app)/(farm)/help-support')}
               activeOpacity={0.7}
             >
               <View style={styles.configLeft}>
