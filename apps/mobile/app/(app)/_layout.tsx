@@ -49,6 +49,12 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="scan-device"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="(farm)"
         options={{
           headerShown: false,

@@ -5,6 +5,7 @@ import {
   ApiError,
   type CreateFarmInput,
   type Device,
+  type RegisterDeviceInput,
   type Farm,
   type HeatmapResponse,
   type DeviceReading,
@@ -159,6 +160,19 @@ export async function getFarm(farmId: string): Promise<Farm> {
  */
 export async function getDevices(farmId: string): Promise<Device[]> {
   return request<Device[]>(`/api/farms/${farmId}/devices`);
+}
+
+/**
+ * Registers a new IoT device / hardware node for a farm.
+ */
+export async function registerDevice(
+  farmId: string,
+  input: RegisterDeviceInput
+): Promise<{ deviceId: string } & Device> {
+  return request<{ deviceId: string } & Device>(`/api/farms/${farmId}/devices`, {
+    method: 'POST',
+    body: input,
+  });
 }
 
 /**

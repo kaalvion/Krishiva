@@ -48,6 +48,14 @@ export interface Device {
   createdAt?: string;
 }
 
+export interface RegisterDeviceInput {
+  nodeId: number;
+  name: string;
+  type: DeviceType;
+  location?: DeviceLocation;
+  capabilities?: string[];
+}
+
 export class ApiError extends Error {
   statusCode: number;
   errorText: string;

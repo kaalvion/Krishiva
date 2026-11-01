@@ -522,12 +522,7 @@ export default function DevicesScreen() {
         {/* Add New Device or Node Button */}
         <TouchableOpacity
           style={styles.addDeviceCard}
-          onPress={() =>
-            Alert.alert(
-              'Add New Device',
-              'Scan QR code on your IoT sensor node or search nearby Bluetooth & GSM gateway.'
-            )
-          }
+          onPress={() => router.push('/(app)/scan-device')}
           activeOpacity={0.85}
         >
           <View style={styles.addIconCircle}>
