@@ -20,6 +20,7 @@ import DateTimePicker, {
   type DateTimePickerChangeEvent,
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { TimePickerModal } from '../../../src/components/TimePickerModal';
 import {
   ArrowLeft,
   Settings,
@@ -612,48 +613,18 @@ export default function ScheduleEditScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Android Time Picker */}
-          {showPicker && Platform.OS === 'android' && (
-            <DateTimePicker
-              value={pickerDate}
-              mode="time"
-              is24Hour={false}
-              display="default"
-              onChange={handleTimeChange}
-            />
-          )}
-
-          {/* iOS Modal Picker */}
-          {showPicker && Platform.OS !== 'android' && (
-            <Modal
-              visible={showPicker}
-              transparent
-              animationType="slide"
-              onRequestClose={() => setShowPicker(false)}
-            >
-              <View style={styles.iosModalOverlay}>
-                <View style={styles.iosModalContent}>
-                  <View style={styles.iosModalHeader}>
-                    <Text style={styles.iosModalTitle}>Select Execution Time</Text>
-                    <TouchableOpacity
-                      onPress={() => setShowPicker(false)}
-                      style={styles.iosDoneBtn}
-                    >
-                      <Text style={styles.iosDoneText}>Done</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <DateTimePicker
-                    value={pickerDate}
-                    mode="time"
-                    is24Hour={false}
-                    display="spinner"
-                    onValueChange={handleTimeValueChange}
-                    onChange={handleTimeChange}
-                  />
-                </View>
-              </View>
-            </Modal>
-          )}
+          {/* Time Picker Modal */}
+          <TimePickerModal
+            visible={showPicker}
+            initialTime={pickerDate}
+            onClose={() => setShowPicker(false)}
+            onConfirm={(date: Date) => {
+              setPickerDate(date);
+              const h = String(date.getHours()).padStart(2, '0');
+              const m = String(date.getMinutes()).padStart(2, '0');
+              setValue('time', `${h}:${m}`);
+            }}
+          />
         </View>
 
         {/* 5. Duration (Automatic Shutoff) */}
