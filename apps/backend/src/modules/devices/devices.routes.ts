@@ -270,6 +270,66 @@ export const devicesRoutes: FastifyPluginAsync = async (fastify) => {
       };
     }
   );
+
+  /**
+   * DELETE /api/devices/:deviceId?farmId=X
+   * Remove device from farm (owner or admin only).
+   */
+  fastify.delete<{
+    Params: { deviceId: string };
+    Querystring: { farmId?: string };
+  }>(
+    '/devices/:deviceId',
+    {
+      schema: {
+        tags: ['Devices'],
+        summary: 'Delete device from farm',
+        security: [{ BearerAuth: [] }],
+        params: {
+          type: 'object',
+          properties: {
+            deviceId: { type: 'string' },
+          },
+          required: ['deviceId'],
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            farmId: { type: 'string' },
+          },
+          required: ['farmId'],
+        },
+      },
+    },
+    async (request, reply) => {
+      const uid = request.user?.uid;
+      if (!uid) throw new HttpError(401, 'Unauthorized');
+      const { deviceId } = request.params;
+      const { farmId } = request.query;
+      if (!farmId) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Query parameter "farmId" is required',
+        });
+      }
+
+      await requireFarmMember(farmId, uid, 'admin');
+
+      const deviceRef = firestore().doc(`farms/${farmId}/devices/${deviceId}`);
+      const snap = await deviceRef.get();
+      if (!snap.exists) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: 'Not Found',
+          message: `Device ${deviceId} not found in farm ${farmId}`,
+        });
+      }
+
+      await deviceRef.delete();
+      return { success: true, message: `Device ${deviceId} deleted successfully` };
+    }
+  );
 };
 
 export default devicesRoutes;

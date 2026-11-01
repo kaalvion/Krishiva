@@ -157,7 +157,16 @@ export default function DevicesScreen() {
         style={[styles.deviceCard, !isOnline && styles.deviceCardOffline]}
       >
         {/* Header Row */}
-        <View style={styles.cardHeader}>
+        <TouchableOpacity
+          style={styles.cardHeader}
+          activeOpacity={0.85}
+          onPress={() =>
+            router.push({
+              pathname: '/(app)/(farm)/device-details',
+              params: { deviceId: item.id },
+            })
+          }
+        >
           <View style={styles.cardHeaderLeft}>
             <View style={[styles.iconBox, { backgroundColor: iconConfig.bg }]}>
               {iconConfig.icon}
@@ -180,10 +189,10 @@ export default function DevicesScreen() {
               !isOnline && styles.actionButtonOffline,
             ]}
             onPress={() =>
-              Alert.alert(
-                item.name,
-                `Node ID: #${item.nodeId}\nType: ${item.type}\nStatus: ${isOnline ? 'Online' : 'Offline'}`
-              )
+              router.push({
+                pathname: '/(app)/(farm)/device-details',
+                params: { deviceId: item.id },
+              })
             }
             activeOpacity={0.8}
             accessibilityRole="button"
@@ -195,7 +204,7 @@ export default function DevicesScreen() {
               <Wrench size={18} color="#556253" />
             )}
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
 
         {/* Status & Telemetry Row */}
         <View style={styles.telemetryRow}>

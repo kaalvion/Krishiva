@@ -203,6 +203,21 @@ export async function getHistory(
 }
 
 /**
+ * Removes a device from a farm.
+ */
+export async function deleteDevice(
+  farmId: string,
+  deviceId: string
+): Promise<{ success: boolean; message?: string }> {
+  return request<{ success: boolean; message?: string }>(
+    `/api/devices/${encodeURIComponent(deviceId)}?farmId=${encodeURIComponent(farmId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+/**
  * Issues an actuator command (e.g. PUMP_ON, PUMP_OFF).
  */
 export async function issueCommand(data: IssueCommandInput): Promise<IssueCommandResponse> {
