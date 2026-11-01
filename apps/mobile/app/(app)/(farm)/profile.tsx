@@ -29,6 +29,7 @@ import {
   Layers,
   LogOut,
   ChevronRight,
+  Tractor,
 } from 'lucide-react-native';
 import { useAuth } from '../../../src/hooks/useAuth';
 import { useActiveFarm } from '../../../src/context/FarmContext';
@@ -409,6 +410,33 @@ export default function ProfileScreen() {
         <View style={styles.sectionGroup}>
           <Text style={styles.sectionTitle}>FARM CONFIGURATION</Text>
           <View style={styles.configCard}>
+            {/* Item 0: Switch / Add Farm */}
+            <TouchableOpacity
+              style={styles.configRow}
+              onPress={() => router.push('/(app)/farms')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.configLeft}>
+                <View style={styles.configIconCircle}>
+                  <Tractor size={18} color="#516600" />
+                </View>
+                <View style={styles.configTextCol}>
+                  <Text style={styles.configTitle}>My Farms & Switch</Text>
+                  <Text style={styles.configSubtitle}>
+                    View all farms or set up a new farm
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.configRightBadgeRow}>
+                <View style={styles.configPill}>
+                  <Text style={styles.configPillText}>+ Add Farm</Text>
+                </View>
+                <ChevronRight size={18} color="#757965" />
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
             {/* Item 1: Farm Details */}
             <TouchableOpacity
               style={styles.configRow}
