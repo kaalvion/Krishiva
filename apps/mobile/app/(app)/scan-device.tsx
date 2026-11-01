@@ -207,18 +207,30 @@ export default function ScanDeviceScreen() {
       return;
     }
 
-    handleRegister(data);
+    router.push({
+      pathname: '/(app)/confirm-device',
+      params: {
+        deviceId: data,
+        farmId: activeFarm?.id || '',
+      },
+    });
+    setTimeout(() => setHasScanned(false), 1500);
   };
 
   // Manual code submission
-  const handleManualPair = async () => {
+  const handleManualPair = () => {
     if (!serialInput.trim()) {
       Alert.alert('Required', 'Please enter a valid serial code or controller ID.');
       return;
     }
-    setManualSubmitting(true);
-    await handleRegister(serialInput);
-    setManualSubmitting(false);
+    setManualModalVisible(false);
+    router.push({
+      pathname: '/(app)/confirm-device',
+      params: {
+        deviceId: serialInput.trim(),
+        farmId: activeFarm?.id || '',
+      },
+    });
   };
 
   const isInvalidState = activeUIState === 'invalid';

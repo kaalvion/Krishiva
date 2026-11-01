@@ -55,6 +55,12 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="confirm-device"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="(farm)"
         options={{
           headerShown: false,
