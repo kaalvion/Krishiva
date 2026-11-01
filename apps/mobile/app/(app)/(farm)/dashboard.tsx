@@ -5,27 +5,14 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
-  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   Cpu,
-  Sprout,
-  Maximize2,
-  Wifi,
   Clock,
-  Radio,
   Layers,
-  Droplets,
-  Thermometer,
-  CloudRain,
-  Activity,
   Database,
-  Sparkles,
-  ShieldAlert,
-  Sun,
-  CheckCircle2,
-  Globe,
+  Wifi,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { ServerStatusBanner, useServerStatus } from '../../../src/context/ServerStatusContext';
@@ -42,7 +29,6 @@ import {
 import {
   computeEffectiveStatus,
   getReadingFreshness,
-  getAveragesStalenessNote,
   formatInTimezone,
 } from '../../../src/utils/freshness';
 import { Card } from '../../../src/components/Card';
@@ -50,17 +36,27 @@ import { Badge } from '../../../src/components/Badge';
 import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { EmptyState } from '../../../src/components/EmptyState';
-import { FieldHeatmap } from '../../../src/components/FieldHeatmap';
 import { AlertBanner } from '../../../src/components/AlertBanner';
 import { colors } from '../../../src/theme/colors';
 import type { Device } from '../../../src/types';
+
+// Modular Dashboard Components
+import {
+  HeaderBlock,
+  StatusStrip,
+  AiBriefCard,
+  HealthGaugeCard,
+  WeatherCard,
+  FieldHeatmapCard,
+} from '../../../src/components/dashboard';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
   const { aiEnabled } = useServerStatus();
-  const { language, changeLanguage, t } = useLanguage();
+  const { t } = useLanguage();
 
+  // Live Firestore hooks (preserved completely)
   const {
     devices,
     loading: devicesLoading,
@@ -96,7 +92,7 @@ export default function DashboardScreen() {
     return (
       <View style={styles.noFarmContainer}>
         <EmptyState
-          icon={<Layers size={32} color={colors.primary} />}
+          icon={<Layers size={32} color={colors.primaryDark} />}
           title="No Farm Selected"
           description="Please select a farm from your farms list to view its dashboard."
           actionTitle="Back to Farms"
@@ -108,29 +104,16 @@ export default function DashboardScreen() {
 
   const onlineCount = devices.filter((d) => computeEffectiveStatus(d.lastSeenAt) === 'online').length;
   const totalCount = devices.length;
-  const offlineCount = Math.max(0, totalCount - onlineCount);
 
-  // Compute sensor averages across devices that have data
-  const cellsWithMoisture = cells.filter((c) => c.soilMoisture !== null && c.soilMoisture !== undefined);
-  const avgMoisture =
-    cellsWithMoisture.length > 0
-      ? Math.round(
-          cellsWithMoisture.reduce((acc, c) => acc + (c.soilMoisture ?? 0), 0) /
-            cellsWithMoisture.length
-        )
-      : null;
+  // Find latest recorded timestamp for freshness
+  const latestRecordedTimestamps = cells
+    .map((c) => c.recordedAt)
+    .filter((t): t is string => Boolean(t))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+  const latestRecordedAt = latestRecordedTimestamps[0] || null;
+  const freshness = getReadingFreshness(latestRecordedAt);
 
-  const cellsWithTemp = cells.filter((c) => c.temperature !== null && c.temperature !== undefined);
-  const avgTemp =
-    cellsWithTemp.length > 0
-      ? Number(
-          (
-            cellsWithTemp.reduce((acc, c) => acc + (c.temperature ?? 0), 0) /
-            cellsWithTemp.length
-          ).toFixed(1)
-        )
-      : null;
-
+  // Sensor averages
   const cellsWithHumidity = cells.filter((c) => c.humidity !== null && c.humidity !== undefined);
   const avgHumidity =
     cellsWithHumidity.length > 0
@@ -139,76 +122,6 @@ export default function DashboardScreen() {
             cellsWithHumidity.length
         )
       : null;
-
-  // Find latest updated timestamp across all cells
-  const latestRecordedTimestamps = cells
-    .map((c) => c.recordedAt)
-    .filter((t): t is string => Boolean(t))
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-  const latestRecordedAt = latestRecordedTimestamps[0] || null;
-  const freshness = getReadingFreshness(latestRecordedAt);
-  const stalenessNote = getAveragesStalenessNote(cells);
-
-  // Status color logic based on requirements:
-  // Soil moisture: <=15 red "Critical", <=25 orange "Low", <=60 green "Good", above 60 blue "Wet"
-  const getMoistureBadge = (val: number | null) => {
-    if (val === null) return { text: 'No data', color: colors.textMuted, bg: '#F5F5F5' };
-    if (val <= 15) return { text: 'Critical', color: '#D32F2F', bg: '#FFEBEE' };
-    if (val <= 25) return { text: 'Low', color: '#EF6C00', bg: '#FFF3E0' };
-    if (val <= 60) return { text: 'Good', color: '#2E7D32', bg: '#E8F5E9' };
-    return { text: 'Wet', color: '#1976D2', bg: '#E3F2FD' };
-  };
-
-  // Temperature: >=42 red, >=35 orange, else green
-  const getTempBadge = (val: number | null) => {
-    if (val === null) return { text: 'No data', color: colors.textMuted, bg: '#F5F5F5' };
-    if (val >= 42) return { text: 'Extreme', color: '#D32F2F', bg: '#FFEBEE' };
-    if (val >= 35) return { text: 'Hot', color: '#EF6C00', bg: '#FFF3E0' };
-    return { text: 'Normal', color: '#2E7D32', bg: '#E8F5E9' };
-  };
-
-  // Humidity: >=90 orange, else green
-  const getHumidityBadge = (val: number | null) => {
-    if (val === null) return { text: 'No data', color: colors.textMuted, bg: '#F5F5F5' };
-    if (val >= 90) return { text: 'High', color: '#EF6C00', bg: '#FFF3E0' };
-    return { text: 'Good', color: '#2E7D32', bg: '#E8F5E9' };
-  };
-
-  const moistureBadge = getMoistureBadge(avgMoisture);
-  const tempBadge = getTempBadge(avgTemp);
-  const humidityBadge = getHumidityBadge(avgHumidity);
-
-  const isWeatherStaleOrMissing =
-    !weather ||
-    !weather.fetchedAt ||
-    Date.now() - new Date(weather.fetchedAt).getTime() > 6 * 60 * 60 * 1000;
-
-  const healthColor =
-    health?.color === 'green'
-      ? '#2E7D32'
-      : health?.color === 'yellow'
-      ? '#D97706'
-      : '#DC2626';
-
-  const healthBg =
-    health?.color === 'green'
-      ? '#E8F5E9'
-      : health?.color === 'yellow'
-      ? '#FEF3C7'
-      : '#FEE2E2';
-
-  const urgencyBadge = {
-    low: { text: 'Low Urgency', bg: '#E8F5E9', color: '#2E7D32' },
-    medium: { text: 'Medium Urgency', bg: '#FEF3C7', color: '#D97706' },
-    high: { text: 'Action Needed', bg: '#FEE2E2', color: '#DC2626' },
-  }[brief?.urgency || 'low'];
-
-  const irrigationTheme = {
-    high: { color: '#DC2626', bg: '#FEE2E2', border: '#FCA5A5', label: 'Action Needed' },
-    medium: { color: '#D97706', bg: '#FEF3C7', border: '#FDE68A', label: 'Irrigate Soon' },
-    low: { color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', label: 'Wait for Rain' },
-    none: { color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0', label: 'Adequate Moisture' },
-  }[irrigation?.urgency || 'none'];
 
   const renderDeviceCard = ({ item }: { item: Device }) => {
     const effectiveStatus = computeEffectiveStatus(item.lastSeenAt);
@@ -224,14 +137,14 @@ export default function DashboardScreen() {
                 isOnline ? styles.deviceIconOnline : styles.deviceIconOffline,
               ]}
             >
-              <Cpu size={20} color={isOnline ? colors.primary : colors.textSecondary} />
+              <Cpu size={20} color={isOnline ? colors.primaryDark : colors.textSecondary} />
             </View>
             <View style={styles.deviceNameBlock}>
               <Text style={styles.deviceName} numberOfLines={1}>
                 {item.name}
               </Text>
               <Text style={styles.nodeIdText}>
-                Hardware Node #{item.nodeId} • {item.type.replace('_', ' ')}
+                Node #{item.nodeId} • {item.type.replace('_', ' ')}
               </Text>
             </View>
           </View>
@@ -243,7 +156,6 @@ export default function DashboardScreen() {
 
         <View style={styles.deviceDivider} />
 
-        {/* Footer info: capabilities & last seen */}
         <View style={styles.deviceFooter}>
           <View style={styles.capabilitiesRow}>
             {item.capabilities.map((cap) => (
@@ -256,7 +168,7 @@ export default function DashboardScreen() {
           <View style={styles.lastSeenRow}>
             <Clock size={12} color={colors.textMuted} />
             <Text style={styles.lastSeenText}>
-              Last seen: {formatInTimezone(item.lastSeenAt, activeFarm.timezone)}
+              {formatInTimezone(item.lastSeenAt, activeFarm.timezone)}
             </Text>
           </View>
         </View>
@@ -266,36 +178,13 @@ export default function DashboardScreen() {
 
   const renderHeader = () => (
     <View style={styles.headerBlock}>
-      {/* Language Selector Bar (Tier 1) */}
-      <View style={styles.langSelectorRow}>
-        <View style={styles.langLabelBlock}>
-          <Globe size={15} color={colors.primaryDark} />
-          <Text style={styles.langLabelText}>{t('common.language')}:</Text>
-        </View>
-        <View style={styles.langPills}>
-          {(['en', 'hi', 'mr'] as const).map((lang) => {
-            const isSelected = language === lang;
-            const label = lang === 'en' ? 'English' : lang === 'hi' ? 'हिंदी' : 'मराठी';
-            return (
-              <TouchableOpacity
-                key={lang}
-                style={[styles.langPill, isSelected && styles.langPillActive]}
-                onPress={() => changeLanguage(lang)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.langPillText, isSelected && styles.langPillTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+      {/* 1. Header Block (Greeting & Language Switcher) */}
+      <HeaderBlock farmName={activeFarm.name} />
 
-      {/* Server Status Banner */}
+      {/* Offline Status & Active Alert Banners */}
       <ServerStatusBanner />
+      <AlertBanner farmId={activeFarm.id} />
 
-      {/* Showing Cached Data Banner if from cache */}
       {isFromCache && (
         <View style={styles.cacheBanner}>
           <Database size={13} color={colors.textSecondary} />
@@ -303,334 +192,36 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      {/* Active Alerts Banner */}
-      <AlertBanner farmId={activeFarm.id} />
+      {/* 2. Status Strip (GSM Master status & Sync) */}
+      <StatusStrip
+        masterStatus={onlineCount > 0 ? 'GSM Master Online' : 'GSM Master Connecting'}
+        syncedLabel={freshness.label}
+        isOnline={freshness.isLive}
+      />
 
-      {/* Farm Overview Card */}
-      <Card style={styles.overviewCard}>
-        <View style={styles.overviewHeader}>
-          <View>
-            <Text style={styles.overviewFarmName}>{activeFarm.name}</Text>
-            <Text style={styles.overviewLocation}>Timezone: {activeFarm.timezone}</Text>
-          </View>
-          <Badge
-            label={activeFarm.role}
-            variant={
-              activeFarm.role === 'owner'
-                ? 'success'
-                : activeFarm.role === 'admin'
-                ? 'warning'
-                : 'neutral'
-            }
-          />
-        </View>
+      {/* 3. AI Brief Card (Dark Forest Green) */}
+      <AiBriefCard
+        brief={brief}
+        translatedBrief={translatedBrief}
+        aiEnabled={aiEnabled}
+      />
 
-        <View style={styles.statGrid}>
-          <View style={styles.statCard}>
-            <Sprout size={18} color={colors.primary} />
-            <Text style={styles.statLabel}>Primary Crop</Text>
-            <Text style={styles.statValue}>{activeFarm.cropType}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Maximize2 size={18} color={colors.primary} />
-            <Text style={styles.statLabel}>Total Area</Text>
-            <Text style={styles.statValue}>{activeFarm.areaAcres} Acres</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Radio size={18} color={colors.primary} />
-            <Text style={styles.statLabel}>Devices</Text>
-            <Text style={styles.statValue}>
-              {onlineCount}/{totalCount} Online
-            </Text>
-          </View>
-        </View>
-      </Card>
+      {/* 4. Health Gauge Card (White card, Lime score) */}
+      <HealthGaugeCard
+        health={health}
+        loading={healthLoading}
+      />
 
-      {/* 1. Today's Farm Brief Card (Hidden if AI is disabled) */}
-      {aiEnabled && (
-        <Card style={styles.aiCard}>
-          <View style={styles.aiCardHeader}>
-            <View style={styles.aiCardTitleRow}>
-              <View style={styles.aiIconBubble}>
-                <Sparkles size={16} color={colors.primary} />
-              </View>
-              <Text style={styles.aiCardTitle}>{t('dashboard.ai_insights')}</Text>
-            </View>
-            {brief && (
-              <View style={[styles.urgencyBadge, { backgroundColor: urgencyBadge.bg }]}>
-                <Text style={[styles.urgencyBadgeText, { color: urgencyBadge.color }]}>
-                  {urgencyBadge.text}
-                </Text>
-              </View>
-            )}
-          </View>
+      {/* 5. Weather Card (Compact mini-metrics) */}
+      <WeatherCard
+        weather={weather}
+        avgHumidity={avgHumidity}
+      />
 
-          {brief ? (
-            <View style={styles.briefContent}>
-              <Text style={styles.briefHeadline}>{translatedBrief?.headline || brief.headline}</Text>
-              <Text style={styles.briefBody} numberOfLines={2}>
-                {translatedBrief?.body || brief.body}
-              </Text>
-              {brief.actionNow && brief.actionNow !== 'null' && (
-                <View style={styles.briefActionRow}>
-                  <CheckCircle2 size={14} color={colors.primary} />
-                  <Text style={styles.briefActionText} numberOfLines={1}>
-                    {translatedBrief?.actionNow || brief.actionNow}
-                  </Text>
-                </View>
-              )}
-            </View>
-          ) : (
-            <View style={styles.briefSkeleton}>
-              <Text style={styles.briefSkeletonTitle}>Brief arrives at 6 AM</Text>
-              <Text style={styles.briefSkeletonSub}>
-                Daily AI agronomy brief is generated each morning and evening.
-              </Text>
-            </View>
-          )}
-        </Card>
-      )}
+      {/* 6. Field Heatmap Card (White card with subtle container) */}
+      <FieldHeatmapCard cells={cells} />
 
-      {/* 2. Farm Health Gauge Card */}
-      <Card style={styles.aiCard}>
-        <View style={styles.aiCardHeader}>
-          <View style={styles.aiCardTitleRow}>
-            <View style={[styles.aiIconBubble, { backgroundColor: healthBg }]}>
-              <Activity size={16} color={healthColor} />
-            </View>
-            <Text style={styles.aiCardTitle}>{t('dashboard.farm_health')}</Text>
-          </View>
-          <View style={[styles.urgencyBadge, { backgroundColor: healthBg }]}>
-            <Text style={[styles.urgencyBadgeText, { color: healthColor }]}>
-              {health ? `${health.score}/100` : 'Calculating...'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.healthRow}>
-          <View style={[styles.healthRing, { borderColor: healthColor }]}>
-            <Text style={[styles.healthScoreText, { color: healthColor }]}>
-              {health?.score ?? '--'}
-            </Text>
-          </View>
-          <View style={styles.healthDetails}>
-            <Text style={styles.healthStatusTitle}>
-              {health
-                ? health.score >= 80
-                  ? 'Optimal Crop Condition'
-                  : health.score >= 60
-                  ? 'Moderate Condition'
-                  : 'Attention Required'
-                : 'Evaluating metrics...'}
-            </Text>
-            {health && health.reasons.length > 0 ? (
-              <View style={styles.reasonsWrap}>
-                {health.reasons.map((reason, idx) => (
-                  <View key={idx} style={styles.reasonChip}>
-                    <Text style={styles.reasonChipText}>{reason}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.healthSubtext}>All sensor nodes and parameters are within normal ranges.</Text>
-            )}
-          </View>
-        </View>
-      </Card>
-
-      {/* 2.5 Irrigation Forecast Card */}
-      {Boolean(irrigation) && (
-        <Card style={[styles.aiCard, { borderColor: irrigationTheme.border, borderWidth: 1 }]}>
-          <View style={styles.aiCardHeader}>
-            <View style={styles.aiCardTitleRow}>
-              <View style={[styles.aiIconBubble, { backgroundColor: irrigationTheme.bg }]}>
-                <Droplets size={16} color={irrigationTheme.color} />
-              </View>
-              <Text style={styles.aiCardTitle}>Irrigation Forecast</Text>
-            </View>
-            <View style={[styles.urgencyBadge, { backgroundColor: irrigationTheme.bg }]}>
-              <Text style={[styles.urgencyBadgeText, { color: irrigationTheme.color }]}>
-                {irrigationTheme.label}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.irrigationMessage}>{irrigation!.message}</Text>
-
-          <View style={styles.irrigationTrajectoryRow}>
-            <View style={styles.trajectoryStep}>
-              <Text style={styles.trajectoryLabel}>Current</Text>
-              <Text style={[styles.trajectoryValue, { color: colors.text }]}>
-                {irrigation!.currentSoil}%
-              </Text>
-            </View>
-            <Text style={styles.trajectoryArrow}>→</Text>
-            <View style={styles.trajectoryStep}>
-              <Text style={styles.trajectoryLabel}>In 1h</Text>
-              <Text
-                style={[
-                  styles.trajectoryValue,
-                  { color: irrigation!.predicted1h < 20 ? '#DC2626' : colors.text },
-                ]}
-              >
-                {irrigation!.predicted1h}%
-              </Text>
-            </View>
-            <Text style={styles.trajectoryArrow}>→</Text>
-            <View style={styles.trajectoryStep}>
-              <Text style={styles.trajectoryLabel}>In 3h</Text>
-              <Text
-                style={[
-                  styles.trajectoryValue,
-                  { color: irrigation!.predicted3h < 25 ? '#D97706' : colors.text },
-                ]}
-              >
-                {irrigation!.predicted3h}%
-              </Text>
-            </View>
-            <Text style={styles.trajectoryArrow}>→</Text>
-            <View style={styles.trajectoryStep}>
-              <Text style={styles.trajectoryLabel}>In 6h</Text>
-              <Text style={[styles.trajectoryValue, { color: colors.textSecondary }]}>
-                {irrigation!.predicted6h}%
-              </Text>
-            </View>
-          </View>
-        </Card>
-      )}
-
-      {/* 3. Weather Card */}
-      <Card style={styles.aiCard}>
-        <View style={styles.aiCardHeader}>
-          <View style={styles.aiCardTitleRow}>
-            <View style={[styles.aiIconBubble, { backgroundColor: '#E0F2FE' }]}>
-              <CloudRain size={16} color="#0284C7" />
-            </View>
-            <Text style={styles.aiCardTitle}>Weather Forecast</Text>
-          </View>
-          {!isWeatherStaleOrMissing && (
-            <Badge label="Open-Meteo" variant="neutral" />
-          )}
-        </View>
-
-        {isWeatherStaleOrMissing ? (
-          <View style={styles.weatherUnavailableBlock}>
-            <Text style={styles.weatherUnavailableText}>Forecast unavailable</Text>
-          </View>
-        ) : (
-          <View style={styles.weatherMetricsRow}>
-            <View style={styles.weatherMetric}>
-              <Text style={styles.weatherMetricLabel}>Rain Next 6h</Text>
-              <Text style={styles.weatherMetricValue}>
-                {weather?.rainNext6hMm ?? 0} mm
-              </Text>
-            </View>
-            <View style={styles.weatherDivider} />
-            <View style={styles.weatherMetric}>
-              <Text style={styles.weatherMetricLabel}>Rain Next 24h</Text>
-              <Text style={styles.weatherMetricValue}>
-                {weather?.rainNext24hMm ?? 0} mm
-              </Text>
-            </View>
-            <View style={styles.weatherDivider} />
-            <View style={styles.weatherMetric}>
-              <Text style={styles.weatherMetricLabel}>Max Temp Today</Text>
-              <Text style={styles.weatherMetricValue}>
-                {weather?.dailySummary?.[0]?.tempMax ?? '--'}°C
-              </Text>
-            </View>
-          </View>
-        )}
-      </Card>
-
-      {/* Live Telemetry Status Bar */}
-      <View style={styles.telemetryStatusRow}>
-        <View style={styles.telemetryTimeBlock}>
-          <Activity size={14} color={freshness.isLive ? colors.online : colors.warning} />
-          <Text style={styles.telemetryTimeText}>{freshness.label}</Text>
-        </View>
-        <View style={styles.deviceStatusPills}>
-          <View style={styles.statusPill}>
-            <View style={[styles.statusDot, { backgroundColor: colors.online }]} />
-            <Text style={styles.statusPillText}>{onlineCount} Online</Text>
-          </View>
-          {offlineCount > 0 && (
-            <View style={styles.statusPill}>
-              <View style={[styles.statusDot, { backgroundColor: colors.offline }]} />
-              <Text style={styles.statusPillText}>{offlineCount} Offline</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* Summary Sensor Cards */}
-      <View style={styles.sensorCardsRow}>
-        {/* Soil Moisture */}
-        <Card style={styles.sensorCard}>
-          <View style={styles.sensorCardHeader}>
-            <View style={[styles.sensorIconCircle, { backgroundColor: '#E3F2FD' }]}>
-              <Droplets size={16} color="#1976D2" />
-            </View>
-            <View style={[styles.sensorBadge, { backgroundColor: moistureBadge.bg }]}>
-              <Text style={[styles.sensorBadgeText, { color: moistureBadge.color }]}>
-                {moistureBadge.text}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.sensorValue}>
-            {avgMoisture !== null ? `${avgMoisture}%` : '--'}
-          </Text>
-          <Text style={styles.sensorLabel}>Soil Moisture (Avg)</Text>
-        </Card>
-
-        {/* Temperature */}
-        <Card style={styles.sensorCard}>
-          <View style={styles.sensorCardHeader}>
-            <View style={[styles.sensorIconCircle, { backgroundColor: '#FBE9E7' }]}>
-              <Thermometer size={16} color="#E65100" />
-            </View>
-            <View style={[styles.sensorBadge, { backgroundColor: tempBadge.bg }]}>
-              <Text style={[styles.sensorBadgeText, { color: tempBadge.color }]}>
-                {tempBadge.text}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.sensorValue}>
-            {avgTemp !== null ? `${avgTemp}°C` : '--'}
-          </Text>
-          <Text style={styles.sensorLabel}>Temperature (Avg)</Text>
-        </Card>
-
-        {/* Humidity */}
-        <Card style={styles.sensorCard}>
-          <View style={styles.sensorCardHeader}>
-            <View style={[styles.sensorIconCircle, { backgroundColor: '#E0F2F1' }]}>
-              <CloudRain size={16} color="#00897B" />
-            </View>
-            <View style={[styles.sensorBadge, { backgroundColor: humidityBadge.bg }]}>
-              <Text style={[styles.sensorBadgeText, { color: humidityBadge.color }]}>
-                {humidityBadge.text}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.sensorValue}>
-            {avgHumidity !== null ? `${avgHumidity}%` : '--'}
-          </Text>
-          <Text style={styles.sensorLabel}>Humidity (Avg)</Text>
-        </Card>
-      </View>
-
-      {/* Staleness Note for Sensor Summary */}
-      {stalenessNote && (
-        <View style={styles.stalenessContainer}>
-          <Text style={styles.stalenessText}>{stalenessNote}</Text>
-        </View>
-      )}
-
-      {/* Field Heatmap */}
-      <FieldHeatmap cells={cells} />
-
-      {/* Devices Section Title */}
+      {/* 7. Devices Section Title */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
           <Wifi size={18} color={colors.primaryDark} />
@@ -674,7 +265,7 @@ export default function DashboardScreen() {
           }
           ListEmptyComponent={
             <EmptyState
-              icon={<Cpu size={32} color={colors.primary} />}
+              icon={<Cpu size={32} color={colors.primaryDark} />}
               title="No Devices Found"
               description="No sensor or actuator nodes have been registered for this farm yet."
             />
@@ -697,249 +288,67 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 36,
   },
   headerBlock: {
     marginBottom: 8,
-  },
-  langSelectorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: colors.borderLight,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  langLabelBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  langLabelText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  langPills: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  langPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  langPillActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  langPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  langPillTextActive: {
-    color: colors.textInverse,
-    fontWeight: '700',
   },
   cacheBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.borderLight,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: 99,
     marginBottom: 10,
-    alignSelf: 'flex-start',
-  },
-  cacheBannerText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  overviewCard: {
-    backgroundColor: colors.primaryDark,
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
-    elevation: 3,
-  },
-  overviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  overviewFarmName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.textInverse,
-    letterSpacing: -0.5,
-  },
-  overviewLocation: {
-    fontSize: 12,
-    color: '#C8E6C9',
-    marginTop: 2,
-  },
-  statGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 12,
-    padding: 10,
-    marginHorizontal: 3,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#C8E6C9',
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  statValue: {
-    fontSize: 13,
-    color: colors.textInverse,
-    fontWeight: '700',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  telemetryStatusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  telemetryTimeBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  telemetryTimeText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  deviceStatusPills: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderLight,
-    gap: 5,
   },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  statusPillText: {
-    fontSize: 11,
-    fontWeight: '600',
+  cacheBannerText: {
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
     color: colors.textSecondary,
-  },
-  sensorCardsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 8,
-  },
-  sensorCard: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 14,
-  },
-  sensorCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sensorIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sensorBadge: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  sensorBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  sensorValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  sensorLabel: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  stalenessContainer: {
-    marginBottom: 14,
-    paddingHorizontal: 4,
-  },
-  stalenessText: {
-    fontSize: 11,
-    color: colors.warning,
-    fontStyle: 'italic',
   },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
     marginTop: 6,
-    paddingHorizontal: 2,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text,
-    marginLeft: 6,
+    fontSize: 16,
+    fontFamily: 'Manrope_700Bold',
+    color: colors.primaryDark,
   },
   deviceCountText: {
-    fontSize: 13,
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
     color: colors.textSecondary,
-    fontWeight: '600',
+    backgroundColor: colors.surfaceContainer,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 99,
   },
   deviceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 18,
     marginBottom: 12,
-    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 24,
+    elevation: 2,
   },
   deviceHeader: {
     flexDirection: 'row',
@@ -953,32 +362,32 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   deviceIconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   deviceIconOnline: {
-    backgroundColor: colors.primarySurface,
+    backgroundColor: colors.primary,
   },
   deviceIconOffline: {
-    backgroundColor: colors.borderLight,
+    backgroundColor: colors.surfaceContainer,
   },
   deviceNameBlock: {
     flex: 1,
   },
   deviceName: {
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: 'Manrope_700Bold',
     color: colors.text,
   },
   nodeIdText: {
     fontSize: 12,
+    fontFamily: 'Manrope_400Regular',
     color: colors.textSecondary,
     marginTop: 2,
-    textTransform: 'capitalize',
   },
   deviceDivider: {
     height: 1,
@@ -989,229 +398,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap',
   },
   capabilitiesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
+    gap: 6,
+    flex: 1,
+    marginRight: 8,
   },
   capChip: {
-    backgroundColor: colors.borderLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    backgroundColor: colors.surfaceContainer,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 99,
   },
   capChipText: {
-    fontSize: 10,
+    fontSize: 11,
+    fontFamily: 'Manrope_600SemiBold',
     color: colors.textSecondary,
-    fontWeight: '600',
-    textTransform: 'uppercase',
   },
   lastSeenRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 4,
   },
   lastSeenText: {
     fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
     color: colors.textMuted,
-  },
-  aiCard: {
-    padding: 16,
-    marginBottom: 12,
-  },
-  aiCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  aiCardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  aiIconBubble: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: colors.primarySurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  urgencyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  urgencyBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  briefContent: {
-    gap: 6,
-  },
-  briefHeadline: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-    lineHeight: 20,
-  },
-  briefBody: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  briefActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-    backgroundColor: colors.primarySurface,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-  },
-  briefActionText: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: '600',
-    flex: 1,
-  },
-  briefSkeleton: {
-    paddingVertical: 8,
-  },
-  briefSkeletonTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  briefSkeletonSub: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  healthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  healthRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  healthScoreText: {
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  healthDetails: {
-    flex: 1,
-    gap: 4,
-  },
-  healthStatusTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  healthSubtext: {
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  reasonsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 2,
-  },
-  reasonChip: {
-    backgroundColor: colors.borderLight,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  reasonChipText: {
-    fontSize: 10,
-    color: colors.textSecondary,
-  },
-  irrigationMessage: {
-    fontSize: 13,
-    color: colors.text,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  irrigationTrajectoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  trajectoryStep: {
-    alignItems: 'center',
-  },
-  trajectoryLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  trajectoryValue: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  trajectoryArrow: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: '700',
-  },
-  weatherUnavailableBlock: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  weatherUnavailableText: {
-    fontSize: 13,
-    color: colors.textMuted,
-    fontStyle: 'italic',
-  },
-  weatherMetricsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 4,
-  },
-  weatherMetric: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  weatherMetricLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginBottom: 4,
-  },
-  weatherMetricValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  weatherDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: colors.borderLight,
   },
 });
