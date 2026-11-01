@@ -92,7 +92,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           try {
             await signOut();
-            router.replace('/(auth)/login');
+            router.replace('/(auth)/onboarding');
           } catch (e: any) {
             Alert.alert('Logout Error', e?.message || 'Could not log out');
           }

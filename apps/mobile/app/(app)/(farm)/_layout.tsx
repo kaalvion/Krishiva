@@ -15,6 +15,10 @@ import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useLiveAlerts } from '../../../src/hooks/live';
 import { colors } from '../../../src/theme/colors';
 
+export const unstable_settings = {
+  initialRouteName: 'dashboard',
+};
+
 export default function FarmTabsLayout() {
   const router = useRouter();
   const { activeFarm } = useActiveFarm();
@@ -29,6 +33,7 @@ export default function FarmTabsLayout() {
 
   return (
     <Tabs
+      initialRouteName="dashboard"
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.card,

@@ -64,7 +64,7 @@ export default function FarmsScreen() {
         onPress: async () => {
           try {
             await signOut();
-            router.replace('/(auth)/login');
+            router.replace('/(auth)/onboarding');
           } catch (err: unknown) {
             Alert.alert('Error', err instanceof Error ? err.message : 'Sign out failed');
           }

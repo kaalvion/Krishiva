@@ -4,6 +4,10 @@ import { useAuth } from '../../src/hooks/useAuth';
 import { LoadingView } from '../../src/components/LoadingView';
 import { colors } from '../../src/theme/colors';
 
+export const unstable_settings = {
+  initialRouteName: 'farms',
+};
+
 export default function AppLayout() {
   const { user, loading } = useAuth();
 
@@ -12,11 +16,12 @@ export default function AppLayout() {
   }
 
   if (!user) {
-    return <Redirect href="/(auth)/login" />;
+    return <Redirect href="/(auth)/onboarding" />;
   }
 
   return (
     <Stack
+      initialRouteName="farms"
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.card,

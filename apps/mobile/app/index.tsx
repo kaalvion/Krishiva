@@ -1,17 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../src/hooks/useAuth';
-import { LoadingView } from '../src/components/LoadingView';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { loading, signOut } = useAuth();
+
+  useEffect(() => {
+    // Clear any existing active session so the user directly experiences the Onboarding screen
+    signOut().catch(() => {});
+  }, [signOut]);
 
   if (loading) {
-    return <LoadingView label="Starting Krishiva..." />;
-  }
-
-  if (user) {
-    return <Redirect href="/(app)/farms" />;
+    return null;
   }
 
   return <Redirect href="/(auth)/onboarding" />;

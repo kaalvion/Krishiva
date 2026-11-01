@@ -13,7 +13,7 @@ import { Link, useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Sprout, LogIn, AlertCircle } from 'lucide-react-native';
+import { Sprout, LogIn, AlertCircle, ArrowLeft } from 'lucide-react-native';
 import { useAuth } from '../../src/hooks/useAuth';
 import { Button } from '../../src/components/Button';
 import { Input } from '../../src/components/Input';
@@ -64,6 +64,13 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.replace('/(auth)/onboarding')}
+        accessibilityLabel="Back to Welcome"
+      >
+        <ArrowLeft size={22} color={colors.primaryDark} />
+      </TouchableOpacity>
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -156,6 +163,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  backButton: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignSelf: 'flex-start',
   },
   container: {
     flex: 1,
