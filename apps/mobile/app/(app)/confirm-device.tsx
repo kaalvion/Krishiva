@@ -105,16 +105,13 @@ export default function ConfirmDeviceScreen() {
 
       refreshDevices();
 
-      Alert.alert(
-        'Device Paired Successfully!',
-        `KRISHIVA-M1 (Node #${nextNodeId}) is now linked to ${activeFarm?.name || 'your farm'}.`,
-        [
-          {
-            text: 'Go to Devices',
-            onPress: () => router.replace('/(app)/(farm)/devices'),
-          },
-        ]
-      );
+      router.push({
+        pathname: '/(app)/name-relays',
+        params: {
+          deviceId: displayMac,
+          farmId: farmId,
+        },
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Could not register controller';
       Alert.alert('Pairing Error', message);

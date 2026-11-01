@@ -61,6 +61,12 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="name-relays"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="(farm)"
         options={{
           headerShown: false,
