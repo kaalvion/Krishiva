@@ -5,11 +5,12 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  KeyboardAvoidingView,
+  TextInput,
   Platform,
   Alert,
   Modal,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
@@ -20,12 +21,26 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import {
+  ArrowLeft,
+  Settings,
+  User,
   Clock,
-  Trash2,
-  Check,
-  AlertCircle,
+  Radio,
+  SlidersHorizontal,
+  Droplets,
+  PowerOff,
   Sliders,
-  Calendar,
+  Sun,
+  Moon,
+  Bell,
+  BellOff,
+  Check,
+  ShieldCheck,
+  Tag,
+  X,
+  ArrowUpRight,
+  Trash2,
+  Edit2,
 } from 'lucide-react-native';
 import { useActiveFarm } from '../../../src/context/FarmContext';
 import { useServerStatus, ServerStatusBanner } from '../../../src/context/ServerStatusContext';
@@ -35,14 +50,11 @@ import {
   useUpdateSchedule,
   useDeleteSchedule,
 } from '../../../src/hooks/useSchedules';
-import { Input } from '../../../src/components/Input';
-import { Button } from '../../../src/components/Button';
-import { Card } from '../../../src/components/Card';
-import { colors } from '../../../src/theme/colors';
 import type {
   ActuatorAction,
   ScheduleDays,
   CreateScheduleInput,
+  Device,
 } from '../../../src/types';
 
 const ACTUATOR_CAPS = ['pump', 'valve', 'light', 'siren'] as const;
@@ -54,14 +66,29 @@ const DURATION_PRESETS = [
   { label: '60 min', seconds: 3600 },
 ];
 
-const DAYS_MAP = [
-  { label: 'Sun', day: 0 },
-  { label: 'Mon', day: 1 },
-  { label: 'Tue', day: 2 },
-  { label: 'Wed', day: 3 },
-  { label: 'Thu', day: 4 },
-  { label: 'Fri', day: 5 },
-  { label: 'Sat', day: 6 },
+const DAYS_BUTTONS = [
+  { label: 'S', day: 0 },
+  { label: 'M', day: 1 },
+  { label: 'T', day: 2 },
+  { label: 'W', day: 3 },
+  { label: 'T', day: 4 },
+  { label: 'F', day: 5 },
+  { label: 'S', day: 6 },
+];
+
+const ACTION_OPTIONS: {
+  action: ActuatorAction;
+  label: string;
+  icon: 'droplets' | 'power_off' | 'valve' | 'sun' | 'moon' | 'bell' | 'bell_off';
+}[] = [
+  { action: 'PUMP_ON', label: 'Turn ON Borewell Pump', icon: 'droplets' },
+  { action: 'PUMP_OFF', label: 'Turn OFF Borewell Pump', icon: 'power_off' },
+  { action: 'VALVE_ON', label: 'Turn ON Drip Valve', icon: 'valve' },
+  { action: 'VALVE_OFF', label: 'Turn OFF Drip Valve', icon: 'valve' },
+  { action: 'LIGHT_ON', label: 'Turn ON Perimeter Light', icon: 'sun' },
+  { action: 'LIGHT_OFF', label: 'Turn OFF Perimeter Light', icon: 'moon' },
+  { action: 'SIREN_ON', label: 'Arm Pest Siren', icon: 'bell' },
+  { action: 'SIREN_OFF', label: 'Disarm Pest Siren', icon: 'bell_off' },
 ];
 
 const scheduleFormSchema = z.object({
@@ -79,7 +106,7 @@ const scheduleFormSchema = z.object({
 type ScheduleFormData = z.infer<typeof scheduleFormSchema>;
 
 export function formatTime12h(time24: string): string {
-  const [hStr, mStr] = time24.split(':');
+  const [hStr, mStr] = (time24 || '06:00').split(':');
   const h = parseInt(hStr, 10);
   const m = parseInt(mStr, 10);
   if (isNaN(h) || isNaN(m)) return time24;
@@ -98,7 +125,7 @@ export default function ScheduleEditScreen() {
   const farmId = activeFarm?.id;
   const { serverOnline } = useServerStatus();
 
-  const { devices, loading: devicesLoading } = useLiveDevices(farmId);
+  const { devices } = useLiveDevices(farmId);
   const { schedules } = useLiveSchedules(farmId);
 
   const createScheduleMutation = useCreateSchedule(farmId);
@@ -110,7 +137,7 @@ export default function ScheduleEditScreen() {
     if (!devices) return [];
     return devices.filter((d) =>
       d.capabilities?.some((cap) =>
-        ACTUATOR_CAPS.includes(cap as (typeof ACTUATOR_CAPS)[number])
+        ACTUATOR_CAPS.includes(cap.toLowerCase() as (typeof ACTUATOR_CAPS)[number])
       )
     );
   }, [devices]);
@@ -121,13 +148,14 @@ export default function ScheduleEditScreen() {
     return schedules.find((s) => s.id === scheduleId) || null;
   }, [isEditing, schedules, scheduleId]);
 
-  // Initial time Date object for picker
+  // DateTimePicker states
   const [pickerDate, setPickerDate] = useState<Date>(() => {
     const d = new Date();
-    d.setMinutes(0, 0, 0);
+    d.setHours(6, 0, 0, 0);
     return d;
   });
   const [showPicker, setShowPicker] = useState<boolean>(false);
+  const [deviceModalVisible, setDeviceModalVisible] = useState(false);
 
   const {
     control,
@@ -142,10 +170,10 @@ export default function ScheduleEditScreen() {
       deviceId: '',
       action: 'PUMP_ON',
       time: '06:00',
-      daysMode: 'daily',
+      daysMode: 'custom',
       selectedDays: [1, 2, 3, 4, 5],
       durationSeconds: 900, // 15 min default
-      name: '',
+      name: 'Morning sugarcane cycle',
     },
   });
 
@@ -155,47 +183,22 @@ export default function ScheduleEditScreen() {
   const daysMode = watch('daysMode');
   const selectedDays = watch('selectedDays') || [];
   const selectedDuration = watch('durationSeconds') || 900;
-
-  const isOnAction = selectedAction ? selectedAction.endsWith('_ON') : false;
+  const scheduleName = watch('name') || '';
 
   // Selected device object
   const currentDevice = useMemo(() => {
-    return actuatorDevices.find((d) => d.id === selectedDeviceId);
+    return (
+      actuatorDevices.find((d) => d.id === selectedDeviceId) ||
+      actuatorDevices[0] ||
+      null
+    );
   }, [actuatorDevices, selectedDeviceId]);
 
-  // Actions allowed for current device
-  const availableActions = useMemo<ActuatorAction[]>(() => {
-    if (!currentDevice) return [];
-    const actions: ActuatorAction[] = [];
-    if (currentDevice.capabilities.includes('pump')) {
-      actions.push('PUMP_ON', 'PUMP_OFF');
-    }
-    if (currentDevice.capabilities.includes('valve')) {
-      actions.push('VALVE_ON', 'VALVE_OFF');
-    }
-    if (currentDevice.capabilities.includes('light')) {
-      actions.push('LIGHT_ON', 'LIGHT_OFF');
-    }
-    if (currentDevice.capabilities.includes('siren')) {
-      actions.push('SIREN_ON', 'SIREN_OFF');
-    }
-    return actions;
-  }, [currentDevice]);
-
-  // Auto-select first actuator device when devices load and form has empty deviceId
+  // Auto-select first actuator device when devices load
   useEffect(() => {
     if (!isEditing && actuatorDevices.length > 0 && !selectedDeviceId) {
       const firstDev = actuatorDevices[0];
       setValue('deviceId', firstDev.id);
-      if (firstDev.capabilities.includes('pump')) {
-        setValue('action', 'PUMP_ON');
-      } else if (firstDev.capabilities.includes('valve')) {
-        setValue('action', 'VALVE_ON');
-      } else if (firstDev.capabilities.includes('light')) {
-        setValue('action', 'LIGHT_ON');
-      } else if (firstDev.capabilities.includes('siren')) {
-        setValue('action', 'SIREN_ON');
-      }
     }
   }, [actuatorDevices, isEditing, selectedDeviceId, setValue]);
 
@@ -217,44 +220,14 @@ export default function ScheduleEditScreen() {
         name: existingSchedule.name || '',
       });
 
-      // Update date picker
-      const [hStr, mStr] = existingSchedule.time.split(':');
+      const [hStr, mStr] = (existingSchedule.time || '06:00').split(':');
       const d = new Date();
-      d.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
+      d.setHours(parseInt(hStr, 10) || 6, parseInt(mStr, 10) || 0, 0, 0);
       setPickerDate(d);
     }
   }, [existingSchedule, reset]);
 
-  // When device changes, ensure action is valid for the device
-  const handleSelectDevice = (devId: string) => {
-    setValue('deviceId', devId);
-    const dev = actuatorDevices.find((d) => d.id === devId);
-    if (dev) {
-      if (dev.capabilities.includes('pump')) {
-        setValue('action', 'PUMP_ON');
-      } else if (dev.capabilities.includes('valve')) {
-        setValue('action', 'VALVE_ON');
-      } else if (dev.capabilities.includes('light')) {
-        setValue('action', 'LIGHT_ON');
-      } else if (dev.capabilities.includes('siren')) {
-        setValue('action', 'SIREN_ON');
-      }
-    }
-  };
-
   // Time picker change handlers
-  const handleTimeValueChange = (_event: DateTimePickerChangeEvent, date: Date) => {
-    if (Platform.OS === 'android') {
-      setShowPicker(false);
-    }
-    if (date) {
-      setPickerDate(date);
-      const h = String(date.getHours()).padStart(2, '0');
-      const m = String(date.getMinutes()).padStart(2, '0');
-      setValue('time', `${h}:${m}`);
-    }
-  };
-
   const handleTimeChange = (_event: DateTimePickerEvent, date?: Date) => {
     if (Platform.OS === 'android') {
       setShowPicker(false);
@@ -267,20 +240,21 @@ export default function ScheduleEditScreen() {
     }
   };
 
-  const applyPresetTime = (timeStr: string) => {
-    setValue('time', timeStr);
-    const [h, m] = timeStr.split(':').map(Number);
-    const d = new Date();
-    d.setHours(h || 0, m || 0, 0, 0);
-    setPickerDate(d);
+  const handleTimeValueChange = (_event: DateTimePickerChangeEvent, date: Date) => {
+    if (Platform.OS === 'android') {
+      setShowPicker(false);
+    }
+    if (date) {
+      setPickerDate(date);
+      const h = String(date.getHours()).padStart(2, '0');
+      const m = String(date.getMinutes()).padStart(2, '0');
+      setValue('time', `${h}:${m}`);
+    }
   };
 
-  const handleTimeDismiss = () => {
-    setShowPicker(false);
-  };
-
-  // Toggle individual day in custom mode
-  const toggleDay = (dayNum: number) => {
+  // Day toggle handler
+  const handleToggleDay = (dayNum: number) => {
+    setValue('daysMode', 'custom');
     let next: number[];
     if (selectedDays.includes(dayNum)) {
       if (selectedDays.length === 1) {
@@ -292,6 +266,44 @@ export default function ScheduleEditScreen() {
       next = [...selectedDays, dayNum].sort((a, b) => a - b);
     }
     setValue('selectedDays', next);
+  };
+
+  const handleSetDaily = () => {
+    setValue('daysMode', 'daily');
+    setValue('selectedDays', [0, 1, 2, 3, 4, 5, 6]);
+  };
+
+  const handleSetCustomDays = () => {
+    setValue('daysMode', 'custom');
+    if (selectedDays.length === 7) {
+      setValue('selectedDays', [1, 2, 3, 4, 5]); // default weekdays
+    }
+  };
+
+  // Custom duration dialog
+  const handleCustomDuration = () => {
+    Alert.prompt
+      ? Alert.prompt(
+          'Custom Duration',
+          'Enter automatic shutoff time in minutes (1 to 60):',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Set',
+              onPress: (val?: string) => {
+                const mins = parseInt(val || '15', 10);
+                if (!isNaN(mins) && mins >= 1 && mins <= 60) {
+                  setValue('durationSeconds', mins * 60);
+                } else {
+                  Alert.alert('Invalid Duration', 'Please enter a number between 1 and 60 minutes.');
+                }
+              },
+            },
+          ],
+          'plain-text',
+          Math.round(selectedDuration / 60).toString()
+        )
+      : Alert.alert('Duration', `Current duration: ${Math.round(selectedDuration / 60)} minutes.`);
   };
 
   // Delete schedule
@@ -323,7 +335,7 @@ export default function ScheduleEditScreen() {
     );
   };
 
-  // Form submit
+  // Submit schedule
   const onSubmit = async (formData: ScheduleFormData) => {
     if (!serverOnline) {
       Alert.alert('Server Offline', 'Needs the server. Try again when it is back online.');
@@ -331,7 +343,6 @@ export default function ScheduleEditScreen() {
     }
     if (!farmId) return;
 
-    // Validate days
     let daysPayload: ScheduleDays;
     if (formData.daysMode === 'daily') {
       daysPayload = 'daily';
@@ -362,7 +373,7 @@ export default function ScheduleEditScreen() {
         router.back();
       } else {
         const payload: CreateScheduleInput = {
-          deviceId: formData.deviceId,
+          deviceId: formData.deviceId || currentDevice?.id || 'node-1',
           action: formData.action,
           time: formData.time,
           days: daysPayload,
@@ -377,10 +388,9 @@ export default function ScheduleEditScreen() {
         router.back();
       }
     } catch (err: any) {
-      // Friendly error handling
       let errorMessage = 'Failed to save schedule. Please try again.';
       if (err?.statusCode === 400 || err?.status === 400) {
-        if (err?.message?.includes('capability') || err?.errorText?.includes('capability')) {
+        if (err?.message?.includes('capability')) {
           errorMessage = 'The selected device lacks the capability for this action.';
         } else if (err?.message?.includes('20') || err?.message?.includes('limit')) {
           errorMessage = 'Schedule limit reached: a farm can have at most 20 schedules.';
@@ -399,168 +409,221 @@ export default function ScheduleEditScreen() {
   const isSubmitting =
     createScheduleMutation.isPending || updateScheduleMutation.isPending;
 
+  const renderActionIcon = (type: (typeof ACTION_OPTIONS)[number]['icon'], isSelected: boolean) => {
+    const iconColor = isSelected ? '#161e00' : '#556253';
+    switch (type) {
+      case 'droplets':
+        return <Droplets size={22} color={iconColor} />;
+      case 'power_off':
+        return <PowerOff size={22} color={iconColor} />;
+      case 'valve':
+        return <Sliders size={22} color={iconColor} />;
+      case 'sun':
+        return <Sun size={22} color={iconColor} />;
+      case 'moon':
+        return <Moon size={22} color={iconColor} />;
+      case 'bell':
+        return <Bell size={22} color={iconColor} />;
+      case 'bell_off':
+        return <BellOff size={22} color={iconColor} />;
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <SafeAreaView style={styles.safeArea}>
+      {/* 1. Header & Top Bar */}
+      <View style={styles.topHeader}>
+        <View style={styles.topHeaderLeft}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <ArrowLeft size={22} color="#191c1b" />
+          </TouchableOpacity>
+          <Text style={styles.topHeaderTitle}>Automation Unit Detail</Text>
+        </View>
+
+        <View style={styles.topHeaderRight}>
+          <TouchableOpacity
+            style={styles.headerIconButton}
+            onPress={() => Alert.alert('Diagnostics', 'Schedule diagnostics & telemetry')}
+            activeOpacity={0.7}
+          >
+            <Settings size={20} color="#191c1b" />
+          </TouchableOpacity>
+          <View style={styles.headerAvatarMini}>
+            <User size={16} color="#ffffff" />
+          </View>
+        </View>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Server Status Banner */}
         <ServerStatusBanner />
 
-        {/* Farm Timezone Notice */}
+        {/* Schedule Details Context Row */}
+        <View style={styles.contextHeader}>
+          <Text style={styles.screenTitle}>SCHEDULE DETAILS</Text>
+          <View style={styles.activeBadge}>
+            <View style={styles.pulseDot} />
+            <Text style={styles.activeBadgeText}>ACTIVE</Text>
+          </View>
+        </View>
+
+        {/* Timezone Sync Banner */}
         <View style={styles.timezoneBanner}>
-          <Clock size={16} color={colors.primary} />
+          <View style={styles.timezoneIconCircle}>
+            <Clock size={18} color="#516600" />
+          </View>
           <Text style={styles.timezoneText}>
-            Times follow the farm’s timezone ({activeFarm?.timezone || 'Asia/Kolkata'}).
+            Times follow the farm’s automated local timezone{' '}
+            <Text style={styles.timezoneBold}>
+              ({activeFarm?.timezone || 'Asia/Kolkata, UTC+5:30'}).
+            </Text>
           </Text>
         </View>
 
-        {/* Device Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Target Actuator Device</Text>
-          {devicesLoading ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : actuatorDevices.length === 0 ? (
-            <Card style={styles.warningCard}>
-              <AlertCircle size={20} color={colors.warning} />
-              <Text style={styles.warningText}>
-                No actuator devices (pumps, valves, lights, sirens) found on this farm.
-              </Text>
-            </Card>
-          ) : (
-            <View style={styles.deviceList}>
-              {actuatorDevices.map((dev) => {
-                const isSelected = dev.id === selectedDeviceId;
-                return (
-                  <TouchableOpacity
-                    key={dev.id}
-                    style={[
-                      styles.deviceOption,
-                      isSelected && styles.deviceOptionSelected,
-                    ]}
-                    onPress={() => handleSelectDevice(dev.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.deviceOptionLeft}>
-                      <View
-                        style={[
-                          styles.radioCircle,
-                          isSelected && styles.radioCircleSelected,
-                        ]}
-                      >
-                        {isSelected && <View style={styles.radioInner} />}
-                      </View>
-                      <View>
-                        <Text
-                          style={[
-                            styles.deviceName,
-                            isSelected && styles.deviceNameSelected,
-                          ]}
-                        >
-                          {dev.name}
-                        </Text>
-                        <Text style={styles.deviceNode}>
-                          Node #{dev.nodeId} • {dev.capabilities.join(', ')}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+        {/* 2. Target Actuator Device */}
+        <View style={styles.sectionGroup}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>TARGET ACTUATOR DEVICE</Text>
+            <Text style={styles.pairedNodeLabel}>PAIRED NODE</Text>
+          </View>
+
+          <View style={styles.deviceCard}>
+            {/* Radio selected indicator */}
+            <View style={styles.radioOuter}>
+              <View style={styles.radioInner} />
             </View>
-          )}
-          {errors.deviceId && (
-            <Text style={styles.errorText}>{errors.deviceId.message}</Text>
-          )}
+
+            <View style={styles.deviceIconBox}>
+              <Radio size={22} color="#191c1b" />
+            </View>
+
+            <View style={styles.deviceDetails}>
+              <View style={styles.deviceNameRow}>
+                <Text style={styles.deviceNameText} numberOfLines={1}>
+                  {currentDevice?.name || 'GSM Master Controller'}
+                </Text>
+                <View style={styles.deviceOnlinePill}>
+                  <View style={styles.onlineDot} />
+                  <Text style={styles.deviceOnlineText}>Online</Text>
+                </View>
+              </View>
+              <Text style={styles.deviceSubtext} numberOfLines={1}>
+                Node #{currentDevice?.nodeId || 1} • F0:24:F9:0D:B7:48 • Borewell & Valves
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.tuneButton}
+              onPress={() => setDeviceModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Select device"
+            >
+              <SlidersHorizontal size={17} color="#556253" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Action Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Action</Text>
+        {/* 3. Action Grid (The 8 commands) */}
+        <View style={styles.sectionGroup}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>ACTION</Text>
+            <Text style={styles.sectionSubtitle}>Tap to select command</Text>
+          </View>
+
           <View style={styles.actionGrid}>
-            {availableActions.map((action) => {
-              const isSelected = action === selectedAction;
-              const isOn = action.endsWith('_ON');
-              const label = isOn
-                ? `Turn ON (${action.split('_')[0]})`
-                : `Turn OFF (${action.split('_')[0]})`;
+            {ACTION_OPTIONS.map((item) => {
+              const isSelected = selectedAction === item.action;
 
               return (
                 <TouchableOpacity
-                  key={action}
+                  key={item.action}
                   style={[
-                    styles.actionButton,
-                    isSelected && styles.actionButtonSelected,
-                    isOn && isSelected && styles.actionButtonOn,
+                    styles.actionTile,
+                    isSelected ? styles.actionTileActive : styles.actionTileInactive,
                   ]}
-                  onPress={() => setValue('action', action)}
-                  activeOpacity={0.7}
+                  onPress={() => setValue('action', item.action)}
+                  activeOpacity={0.85}
                 >
+                  <View style={styles.actionTileTop}>
+                    {renderActionIcon(item.icon, isSelected)}
+                    {isSelected ? (
+                      <View style={styles.checkCircle}>
+                        <Check size={12} color="#C6E85A" strokeWidth={3} />
+                      </View>
+                    ) : (
+                      <View style={styles.uncheckCircle} />
+                    )}
+                  </View>
+
                   <Text
                     style={[
-                      styles.actionButtonText,
-                      isSelected && styles.actionButtonTextSelected,
+                      styles.actionLabel,
+                      isSelected ? styles.actionLabelActive : styles.actionLabelInactive,
                     ]}
                   >
-                    {label}
+                    {item.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          {errors.action && (
-            <Text style={styles.errorText}>{errors.action.message}</Text>
-          )}
         </View>
 
-        {/* Time Picker */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Execution Time</Text>
-          <TouchableOpacity
-            style={styles.timeCard}
-            onPress={() => {
-              const [h, m] = (selectedTime || '06:00').split(':').map(Number);
-              const d = new Date();
-              d.setHours(h ?? 6, m ?? 0, 0, 0);
-              setPickerDate(d);
-              setShowPicker(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.timeCardLeft}>
-              <View style={styles.timeIconCircle}>
-                <Clock size={22} color={colors.primary} />
+        {/* 4. Execution Time */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionTitle}>EXECUTION TIME</Text>
+          <View style={styles.timeCard}>
+            <View style={styles.timeLeft}>
+              <View style={styles.clockCircle}>
+                <Clock size={24} color="#161e00" />
               </View>
-              <View>
-                <Text style={styles.timeDisplay}>
+              <View style={styles.timeCol}>
+                <Text style={styles.hugeTimeDisplay}>
                   {formatTime12h(selectedTime)}
                 </Text>
-                <Text style={styles.timeSubtext}>24h: {selectedTime}</Text>
+                <Text style={styles.timeSubtext}>
+                  24h format: {selectedTime} • Sunrise irrigation
+                </Text>
               </View>
             </View>
-            <Text style={styles.changeTimeText}>Change Time</Text>
-          </TouchableOpacity>
 
-          {/* Android Picker */}
+            <TouchableOpacity
+              style={styles.timeEditButton}
+              onPress={() => {
+                const [h, m] = (selectedTime || '06:00').split(':').map(Number);
+                const d = new Date();
+                d.setHours(h ?? 6, m ?? 0, 0, 0);
+                setPickerDate(d);
+                setShowPicker(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.timeEditText}>Edit</Text>
+              <Edit2 size={13} color="#191c1b" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Android Time Picker */}
           {showPicker && Platform.OS === 'android' && (
             <DateTimePicker
               value={pickerDate}
               mode="time"
               is24Hour={false}
               display="default"
-              themeVariant="light"
-              textColor="#111827"
-              onValueChange={handleTimeValueChange}
               onChange={handleTimeChange}
-              onDismiss={handleTimeDismiss}
             />
           )}
 
-          {/* iOS / Modal Picker */}
+          {/* iOS Modal Picker */}
           {showPicker && Platform.OS !== 'android' && (
             <Modal
               visible={showPicker}
@@ -571,135 +634,109 @@ export default function ScheduleEditScreen() {
               <View style={styles.iosModalOverlay}>
                 <View style={styles.iosModalContent}>
                   <View style={styles.iosModalHeader}>
-                    <Text style={styles.iosModalTitle}>Select Time</Text>
+                    <Text style={styles.iosModalTitle}>Select Execution Time</Text>
                     <TouchableOpacity
                       onPress={() => setShowPicker(false)}
-                      style={styles.iosDoneButton}
+                      style={styles.iosDoneBtn}
                     >
                       <Text style={styles.iosDoneText}>Done</Text>
                     </TouchableOpacity>
                   </View>
-
-                  {/* Selected Time Banner */}
-                  <View style={styles.iosTimeBanner}>
-                    <Clock size={20} color={colors.primary} />
-                    <Text style={styles.iosTimeBannerText}>
-                      {formatTime12h(selectedTime)}
-                    </Text>
-                    <Text style={styles.iosTimeBannerSub}>
-                      ({selectedTime})
-                    </Text>
-                  </View>
-
-                  {/* Native iOS Picker */}
-                  <View style={styles.iosPickerContainer}>
-                    <DateTimePicker
-                      value={pickerDate}
-                      mode="time"
-                      is24Hour={false}
-                      display="spinner"
-                      themeVariant="light"
-                      textColor="#111827"
-                      style={styles.iosPicker}
-                      onValueChange={handleTimeValueChange}
-                      onChange={handleTimeChange}
-                      onDismiss={handleTimeDismiss}
-                    />
-                  </View>
-
-                  {/* Quick Preset Time Chips */}
-                  <View style={styles.quickTimeSection}>
-                    <Text style={styles.quickTimeTitle}>Quick Presets</Text>
-                    <View style={styles.quickTimeGrid}>
-                      {[
-                        { label: '6:00 AM', time: '06:00' },
-                        { label: '8:00 AM', time: '08:00' },
-                        { label: '12:00 PM', time: '12:00' },
-                        { label: '4:00 PM', time: '16:00' },
-                        { label: '6:00 PM', time: '18:00' },
-                        { label: '8:00 PM', time: '20:00' },
-                      ].map((preset) => {
-                        const isSelected = selectedTime === preset.time;
-                        return (
-                          <TouchableOpacity
-                            key={preset.time}
-                            style={[
-                              styles.quickTimePill,
-                              isSelected && styles.quickTimePillSelected,
-                            ]}
-                            onPress={() => applyPresetTime(preset.time)}
-                            activeOpacity={0.7}
-                          >
-                            <Text
-                              style={[
-                                styles.quickTimePillText,
-                                isSelected && styles.quickTimePillTextSelected,
-                              ]}
-                            >
-                              {preset.label}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="time"
+                    is24Hour={false}
+                    display="spinner"
+                    onValueChange={handleTimeValueChange}
+                    onChange={handleTimeChange}
+                  />
                 </View>
               </View>
             </Modal>
           )}
         </View>
 
-        {/* Duration (Only for ON actions) */}
-        {isOnAction && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Duration (Automatic Shutoff)</Text>
-            <Text style={styles.sectionHint}>
-              Actuator will safely turn off after this duration.
-            </Text>
-            <View style={styles.chipRow}>
-              {DURATION_PRESETS.map((item) => {
-                const isSelected = selectedDuration === item.seconds;
-                return (
-                  <TouchableOpacity
-                    key={item.seconds}
-                    style={[
-                      styles.chip,
-                      isSelected && styles.chipSelected,
-                    ]}
-                    onPress={() => setValue('durationSeconds', item.seconds)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        isSelected && styles.chipTextSelected,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+        {/* 5. Duration (Automatic Shutoff) */}
+        <View style={styles.sectionGroup}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>DURATION (AUTOMATIC SHUTOFF)</Text>
+            <View style={styles.dryRunRow}>
+              <ShieldCheck size={14} color="#516600" />
+              <Text style={styles.dryRunText}>Dry-run safe</Text>
             </View>
           </View>
-        )}
+          <Text style={styles.durationHelpText}>
+            Pump will automatically deactivate after specified interval to prevent dry run or soil runoff.
+          </Text>
 
-        {/* Days Selector */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Frequency</Text>
-          <View style={styles.daysModeRow}>
+          <View style={styles.durationPillsRow}>
+            {DURATION_PRESETS.map((preset) => {
+              const isSelected = selectedDuration === preset.seconds;
+
+              return (
+                <TouchableOpacity
+                  key={preset.label}
+                  style={[
+                    styles.durationPill,
+                    isSelected ? styles.durationPillActive : styles.durationPillInactive,
+                  ]}
+                  onPress={() => setValue('durationSeconds', preset.seconds)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.durationPillText,
+                      isSelected && styles.durationPillTextActive,
+                    ]}
+                  >
+                    {preset.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Custom Duration Pill */}
             <TouchableOpacity
               style={[
-                styles.modeButton,
-                daysMode === 'daily' && styles.modeButtonSelected,
+                styles.durationPill,
+                !DURATION_PRESETS.some((p) => p.seconds === selectedDuration)
+                  ? styles.durationPillActive
+                  : styles.durationPillInactive,
               ]}
-              onPress={() => setValue('daysMode', 'daily')}
-              activeOpacity={0.7}
+              onPress={handleCustomDuration}
+              activeOpacity={0.8}
             >
               <Text
                 style={[
-                  styles.modeButtonText,
-                  daysMode === 'daily' && styles.modeButtonTextSelected,
+                  styles.durationPillText,
+                  !DURATION_PRESETS.some((p) => p.seconds === selectedDuration) &&
+                    styles.durationPillTextActive,
+                ]}
+              >
+                Custom
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 6. Frequency & Recurrence */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionTitle}>FREQUENCY</Text>
+
+          {/* Segmented Track */}
+          <View style={styles.freqTrack}>
+            <TouchableOpacity
+              style={[
+                styles.freqTab,
+                daysMode === 'daily' && styles.freqTabActive,
+              ]}
+              onPress={handleSetDaily}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.freqTabText,
+                  daysMode === 'daily' && styles.freqTabTextActive,
                 ]}
               >
                 Daily (Every day)
@@ -708,16 +745,16 @@ export default function ScheduleEditScreen() {
 
             <TouchableOpacity
               style={[
-                styles.modeButton,
-                daysMode === 'custom' && styles.modeButtonSelected,
+                styles.freqTab,
+                daysMode === 'custom' && styles.freqTabActive,
               ]}
-              onPress={() => setValue('daysMode', 'custom')}
-              activeOpacity={0.7}
+              onPress={handleSetCustomDays}
+              activeOpacity={0.8}
             >
               <Text
                 style={[
-                  styles.modeButtonText,
-                  daysMode === 'custom' && styles.modeButtonTextSelected,
+                  styles.freqTabText,
+                  daysMode === 'custom' && styles.freqTabTextActive,
                 ]}
               >
                 Select Days
@@ -725,24 +762,26 @@ export default function ScheduleEditScreen() {
             </TouchableOpacity>
           </View>
 
-          {daysMode === 'custom' && (
-            <View style={styles.dayChipsGrid}>
-              {DAYS_MAP.map((item) => {
-                const isSelected = selectedDays.includes(item.day);
+          {/* Day Circles Card */}
+          <View style={styles.daysCard}>
+            <View style={styles.daysCirclesRow}>
+              {DAYS_BUTTONS.map((item, index) => {
+                const isActive = selectedDays.includes(item.day);
+
                 return (
                   <TouchableOpacity
-                    key={item.day}
+                    key={`${item.label}-${index}`}
                     style={[
                       styles.dayCircle,
-                      isSelected && styles.dayCircleSelected,
+                      isActive ? styles.dayCircleActive : styles.dayCircleInactive,
                     ]}
-                    onPress={() => toggleDay(item.day)}
-                    activeOpacity={0.7}
+                    onPress={() => handleToggleDay(item.day)}
+                    activeOpacity={0.8}
                   >
                     <Text
                       style={[
                         styles.dayCircleText,
-                        isSelected && styles.dayCircleTextSelected,
+                        isActive && styles.dayCircleTextActive,
                       ]}
                     >
                       {item.label}
@@ -751,455 +790,794 @@ export default function ScheduleEditScreen() {
                 );
               })}
             </View>
-          )}
+
+            <View style={styles.daysFooterRow}>
+              <Text style={styles.daysFooterLeft}>
+                Repeats weekly on selected weekday mornings
+              </Text>
+              <Text style={styles.daysFooterRight}>
+                {selectedDays.length} DAYS ACTIVE
+              </Text>
+            </View>
+          </View>
         </View>
 
-        {/* Schedule Name */}
-        <View style={styles.section}>
-          <Controller
-            control={control}
-            name="name"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <Input
-                label="Schedule Name (Optional)"
-                placeholder="e.g. Morning sugarcane cycle"
-                value={value}
-                onChangeText={onChange}
-                onBlur={onBlur}
-                maxLength={60}
-                error={errors.name?.message}
-              />
-            )}
-          />
-        </View>
-
-        {/* Submit and Delete Actions */}
-        <View style={styles.actionContainer}>
-          <Button
-            title={isEditing ? 'Save Changes' : 'Create Schedule'}
-            onPress={handleSubmit(onSubmit)}
-            loading={isSubmitting}
-            disabled={actuatorDevices.length === 0 || !serverOnline}
-            style={styles.submitButton}
-          />
-
-          {isEditing && (
-            <TouchableOpacity
-              style={[styles.deleteButton, !serverOnline && { opacity: 0.5 }]}
-              onPress={handleDelete}
-              disabled={deleteScheduleMutation.isPending || !serverOnline}
-              activeOpacity={0.7}
-            >
-              {deleteScheduleMutation.isPending ? (
-                <ActivityIndicator size="small" color={colors.error} />
-              ) : (
-                <>
-                  <Trash2 size={18} color={colors.error} />
-                  <Text style={styles.deleteButtonText}>Delete Schedule</Text>
-                </>
+        {/* 7. Schedule Name */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionTitle}>SCHEDULE NAME</Text>
+          <View style={styles.nameCard}>
+            <Tag size={20} color="#556253" />
+            <Controller
+              control={control}
+              name="name"
+              render={({ field: { onChange, value } }) => (
+                <TextInput
+                  style={styles.nameInput}
+                  value={value}
+                  onChangeText={onChange}
+                  placeholder="Morning sugarcane cycle"
+                  placeholderTextColor="#757965"
+                />
               )}
-            </TouchableOpacity>
-          )}
+            />
+            {scheduleName.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearBtn}
+                onPress={() => setValue('name', '')}
+              >
+                <X size={14} color="#556253" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
+
+        {/* Spacing for bottom bar */}
+        <View style={{ height: 120 }} />
       </ScrollView>
-    </KeyboardAvoidingView>
+
+      {/* 8. Sticky Bottom Bar */}
+      <View style={styles.bottomBar}>
+        {/* Save Changes Button */}
+        <TouchableOpacity
+          style={styles.saveButton}
+          onPress={handleSubmit(onSubmit)}
+          disabled={isSubmitting}
+          activeOpacity={0.85}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color="#161e00" />
+          ) : (
+            <>
+              <Text style={styles.saveButtonText}>SAVE CHANGES</Text>
+              <View style={styles.saveArrowCircle}>
+                <ArrowUpRight size={19} color="#ffffff" />
+              </View>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* Delete Schedule Button */}
+        {isEditing && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDelete}
+            activeOpacity={0.85}
+          >
+            <Trash2 size={16} color="#ba1a1a" />
+            <Text style={styles.deleteButtonText}>Delete Schedule</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Device Picker Modal */}
+      <Modal
+        visible={deviceModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDeviceModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Actuator Node</Text>
+              <TouchableOpacity onPress={() => setDeviceModalVisible(false)}>
+                <X size={20} color="#191c1b" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalDeviceList}>
+              {actuatorDevices.map((dev) => (
+                <TouchableOpacity
+                  key={dev.id}
+                  style={[
+                    styles.modalDeviceItem,
+                    dev.id === selectedDeviceId && styles.modalDeviceItemSelected,
+                  ]}
+                  onPress={() => {
+                    setValue('deviceId', dev.id);
+                    setDeviceModalVisible(false);
+                  }}
+                >
+                  <Radio size={20} color="#516600" />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.modalDeviceName}>{dev.name}</Text>
+                    <Text style={styles.modalDeviceSub}>
+                      Node #{dev.nodeId} • {dev.type}
+                    </Text>
+                  </View>
+                  {dev.id === selectedDeviceId && (
+                    <Check size={18} color="#516600" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  safeArea: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#f9faf8',
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(249, 250, 248, 0.92)',
+    borderBottomWidth: 1,
+    borderBottomColor: '#edeeec',
+  },
+  topHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topHeaderTitle: {
+    fontSize: 16,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
+  },
+  topHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarMini: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#516600',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  contextHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  screenTitle: {
+    fontSize: 22,
+    fontFamily: 'Manrope_300Light',
+    color: '#191c1b',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#c6e85a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 99,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#516600',
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontFamily: 'Manrope_700Bold',
+    color: '#161e00',
+    letterSpacing: 0.5,
   },
   timezoneBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.primarySurface,
+    gap: 10,
+    backgroundColor: 'rgba(211, 225, 166, 0.4)',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 16,
     marginBottom: 16,
+  },
+  timezoneIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   timezoneText: {
     fontSize: 12,
-    color: colors.primaryDark,
+    fontFamily: 'Manrope_400Regular',
+    color: '#454937',
     flex: 1,
-    fontWeight: '500',
+    lineHeight: 17,
   },
-  section: {
-    marginBottom: 20,
+  timezoneBold: {
+    fontFamily: 'Manrope_700Bold',
+    color: '#191c1b',
   },
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 8,
+  sectionGroup: {
+    marginBottom: 18,
   },
-  sectionHint: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: 10,
-  },
-  warningCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 14,
-    backgroundColor: '#FFF3E0',
-    borderColor: '#FFE0B2',
-  },
-  warningText: {
-    fontSize: 13,
-    color: colors.warning,
-    flex: 1,
-  },
-  deviceList: {
-    gap: 8,
-  },
-  deviceOption: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.borderLight,
+    marginBottom: 8,
+    paddingHorizontal: 2,
   },
-  deviceOptionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySurface,
+  sectionTitle: {
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#556253',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
-  deviceOptionLeft: {
+  pairedNodeLabel: {
+    fontSize: 10,
+    fontFamily: 'Manrope_700Bold',
+    color: '#516600',
+    letterSpacing: 0.8,
+  },
+  sectionSubtitle: {
+    fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
+    color: '#757965',
+  },
+  deviceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
   },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: colors.textMuted,
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#c6e85a',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  radioCircleSelected: {
-    borderColor: colors.primary,
+    flexShrink: 0,
   },
   radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#161e00',
   },
-  deviceName: {
+  deviceIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: '#f3f4f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  deviceDetails: {
+    flex: 1,
+    minWidth: 0,
+  },
+  deviceNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deviceNameText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
+    flexShrink: 1,
   },
-  deviceNameSelected: {
-    color: colors.primaryDark,
-    fontWeight: '700',
+  deviceOnlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#d8e7d4',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 99,
   },
-  deviceNode: {
-    fontSize: 12,
-    color: colors.textMuted,
+  onlineDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#516600',
+  },
+  deviceOnlineText: {
+    fontSize: 9,
+    fontFamily: 'Manrope_700Bold',
+    color: '#5b6859',
+  },
+  deviceSubtext: {
+    fontSize: 10,
+    fontFamily: 'Manrope_400Regular',
+    color: '#556253',
     marginTop: 2,
+  },
+  tuneButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f3f4f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   actionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
-  actionButton: {
-    flex: 1,
-    minWidth: '45%',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    alignItems: 'center',
+  actionTile: {
+    width: '48.5%',
+    minHeight: 96,
+    borderRadius: 20,
+    padding: 12,
+    justifyContent: 'space-between',
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  actionButtonSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySurface,
+  actionTileActive: {
+    backgroundColor: '#C6E85A',
   },
-  actionButtonOn: {
-    borderColor: colors.primary,
-    backgroundColor: '#E8F5E9',
+  actionTileInactive: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
   },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  actionButtonTextSelected: {
-    color: colors.primaryDark,
-    fontWeight: '700',
-  },
-  timeCard: {
+  actionTileTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: colors.borderLight,
   },
-  timeCardLeft: {
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#161e00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uncheckCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#edeeec',
+  },
+  actionLabel: {
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  actionLabelActive: {
+    fontFamily: 'Manrope_700Bold',
+    color: '#161e00',
+  },
+  actionLabelInactive: {
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#556253',
+  },
+  timeCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  timeLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
-  timeIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primarySurface,
+  clockCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#C6E85A',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  timeDisplay: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
+  timeCol: {
+    flex: 1,
+  },
+  hugeTimeDisplay: {
+    fontSize: 30,
+    fontFamily: 'Manrope_300Light',
+    color: '#191c1b',
+    letterSpacing: -0.5,
   },
   timeSubtext: {
+    fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
+    color: '#556253',
+    marginTop: 2,
+  },
+  timeEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f3f4f2',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 99,
+  },
+  timeEditText: {
     fontSize: 12,
-    color: colors.textMuted,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
   },
-  changeTimeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  chipRow: {
+  dryRunRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+    alignItems: 'center',
+    gap: 4,
   },
-  chip: {
+  dryRunText: {
+    fontSize: 11,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#516600',
+  },
+  durationHelpText: {
+    fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
+    color: '#757965',
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  durationPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  durationPill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 99,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  durationPillActive: {
+    backgroundColor: '#C6E85A',
+  },
+  durationPillInactive: {
+    backgroundColor: '#ffffff',
+  },
+  durationPillText: {
+    fontSize: 12,
+    fontFamily: 'Manrope_500Medium',
+    color: '#556253',
+  },
+  durationPillTextActive: {
+    fontFamily: 'Manrope_700Bold',
+    color: '#161e00',
+  },
+  freqTrack: {
+    flexDirection: 'row',
+    backgroundColor: '#edeeec',
+    borderRadius: 99,
+    padding: 4,
+    marginBottom: 10,
+  },
+  freqTab: {
+    flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    borderRadius: 99,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipSelected: {
-    backgroundColor: colors.primarySurface,
-    borderColor: colors.primary,
+  freqTabActive: {
+    backgroundColor: '#C6E85A',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
+  freqTabText: {
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#556253',
   },
-  chipTextSelected: {
-    color: colors.primaryDark,
-    fontWeight: '700',
+  freqTabTextActive: {
+    fontFamily: 'Manrope_700Bold',
+    color: '#161e00',
   },
-  daysModeRow: {
+  daysCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  daysCirclesRow: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-  },
-  modeButtonSelected: {
-    backgroundColor: colors.primarySurface,
-    borderColor: colors.primary,
-  },
-  modeButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  modeButtonTextSelected: {
-    color: colors.primaryDark,
-    fontWeight: '700',
-  },
-  dayChipsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
   dayCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.card,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayCircleSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  dayCircleActive: {
+    backgroundColor: '#1E2A1E',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  dayCircleInactive: {
+    backgroundColor: '#f3f4f2',
   },
   dayCircleText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textSecondary,
+    fontSize: 13,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#556253',
   },
-  dayCircleTextSelected: {
-    color: colors.textInverse,
+  dayCircleTextActive: {
+    fontFamily: 'Manrope_700Bold',
+    color: '#ffffff',
   },
-  actionContainer: {
-    marginTop: 10,
-    gap: 14,
+  daysFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  submitButton: {
+  daysFooterLeft: {
+    fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
+    color: '#556253',
+    flex: 1,
+  },
+  daysFooterRight: {
+    fontSize: 10,
+    fontFamily: 'Manrope_700Bold',
+    color: '#516600',
+    letterSpacing: 0.5,
+  },
+  nameCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#1E2A1E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  nameInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
+    paddingVertical: 4,
+  },
+  clearBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(249, 250, 248, 0.94)',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#edeeec',
+    gap: 8,
+  },
+  saveButton: {
+    width: '100%',
     height: 52,
+    borderRadius: 99,
+    backgroundColor: '#C6E85A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 24,
+    paddingRight: 6,
+    shadowColor: '#C6E85A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  saveButtonText: {
+    fontSize: 13,
+    fontFamily: 'Manrope_700Bold',
+    color: '#161e00',
+    letterSpacing: 0.8,
+  },
+  saveArrowCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#1E2A1E',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   deleteButton: {
+    width: '100%',
+    height: 42,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255, 218, 214, 0.6)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#FFCDD2',
-    backgroundColor: colors.errorSurface,
+    gap: 6,
   },
   deleteButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.error,
-  },
-  errorText: {
-    fontSize: 12,
-    color: colors.error,
-    marginTop: 6,
+    fontSize: 13,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#ba1a1a',
   },
   iosModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
   iosModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 32,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 16,
   },
   iosModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    marginBottom: 8,
   },
   iosModalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 16,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
   },
-  iosDoneButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: colors.primarySurface,
+  iosDoneBtn: {
+    padding: 6,
   },
   iosDoneText: {
     fontSize: 15,
-    fontWeight: '700',
-    color: colors.primaryDark,
+    fontFamily: 'Manrope_700Bold',
+    color: '#516600',
   },
-  iosTimeBanner: {
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '60%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
+  },
+  modalDeviceList: {
+    paddingBottom: 20,
+  },
+  modalDeviceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
     paddingVertical: 12,
-    backgroundColor: colors.primarySurface,
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 6,
-    borderRadius: 12,
-  },
-  iosTimeBannerText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.primaryDark,
-  },
-  iosTimeBannerSub: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  iosPickerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    height: 190,
-    overflow: 'hidden',
-  },
-  iosPicker: {
-    height: 190,
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-  },
-  quickTimeSection: {
-    paddingHorizontal: 16,
-    marginTop: 10,
-  },
-  quickTimeTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  quickTimeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  quickTimePill: {
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderRadius: 14,
+    marginBottom: 8,
+    backgroundColor: '#f3f4f2',
   },
-  quickTimePillSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  modalDeviceItemSelected: {
+    borderWidth: 1.5,
+    borderColor: '#C6E85A',
   },
-  quickTimePillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.text,
+  modalDeviceName: {
+    fontSize: 14,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#191c1b',
   },
-  quickTimePillTextSelected: {
-    color: colors.textInverse,
-    fontWeight: '700',
+  modalDeviceSub: {
+    fontSize: 11,
+    fontFamily: 'Manrope_400Regular',
+    color: '#556253',
+    marginTop: 2,
   },
 });
