@@ -372,14 +372,25 @@ describe('Firestore Security Rules: Strict Zero-Client-Write Enforcement', () =>
       })
     );
 
-    // Create / acknowledge alert
+    // Alert creation is denied (only backend/hardware can create alerts)
     await assertFails(
       setDoc(doc(ownerDb, 'farms', 'farm_alpha', 'alerts', 'alert_fake'), {
         type: 'FAKE',
       })
     );
-    await assertFails(
+
+    // Alert acknowledgement: Owner CAN acknowledge alerts
+    await assertSucceeds(
       updateDoc(doc(ownerDb, 'farms', 'farm_alpha', 'alerts', 'alert_1'), {
+        acknowledged: true,
+        acknowledgedAt: '2026-11-02T11:00:00Z',
+        acknowledgedBy: 'user_owner',
+      })
+    );
+
+    // Viewer CANNOT acknowledge alerts
+    await assertFails(
+      updateDoc(doc(viewerDb, 'farms', 'farm_alpha', 'alerts', 'alert_1'), {
         acknowledged: true,
       })
     );
@@ -398,11 +409,75 @@ describe('Firestore Security Rules: Strict Zero-Client-Write Enforcement', () =>
       })
     );
 
-    // Mutate user profile
-    await assertFails(
+    // User CAN update their own profile
+    await assertSucceeds(
       updateDoc(doc(ownerDb, 'users', 'user_owner'), {
+        displayName: 'Updated Name',
+      })
+    );
+
+    // User CANNOT mutate another user's profile
+    await assertFails(
+      updateDoc(doc(ownerDb, 'users', 'user_viewer'), {
         displayName: 'Hacked Name',
       })
+    );
+  });
+
+  it('Krishiva master device user and customer QR claiming flows succeed', async () => {
+    const deviceDb = testEnv.authenticatedContext('BYEr1eznePWgys4mVgX7SZRRknf2').firestore();
+    const customerDb = testEnv.authenticatedContext('user_customer').firestore();
+    const outsiderDb = testEnv.authenticatedContext('user_outsider').firestore();
+
+    // 1. Hardware master registers device in factory registry with empty ownerUid
+    await assertSucceeds(
+      setDoc(doc(deviceDb, 'devices', 'AA:BB:CC:11:22:33'), {
+        ownerUid: '',
+        status: 'INACTIVE',
+        mac: 'AA:BB:CC:11:22:33',
+      })
+    );
+
+    // 2. Hardware master can update telemetry/status without changing ownerUid
+    await assertSucceeds(
+      updateDoc(doc(deviceDb, 'devices', 'AA:BB:CC:11:22:33'), {
+        status: 'READY',
+        rssi: -72,
+      })
+    );
+
+    // 3. Customer claims device via QR scan (sets ownerUid to own uid and sets CLAIMED_AT)
+    await assertSucceeds(
+      updateDoc(doc(customerDb, 'devices', 'AA:BB:CC:11:22:33'), {
+        ownerUid: 'user_customer',
+        CLAIMED_AT: '2026-11-02T11:00:00Z',
+      })
+    );
+
+    // 4. Once claimed, another user CANNOT claim it again
+    await assertFails(
+      updateDoc(doc(outsiderDb, 'devices', 'AA:BB:CC:11:22:33'), {
+        ownerUid: 'user_outsider',
+      })
+    );
+
+    // 5. Hardware master can read and write to farms/<ownerUid>/DEVICES/<MAC>
+    await assertSucceeds(
+      setDoc(doc(deviceDb, 'farms', 'user_customer', 'DEVICES', 'AA:BB:CC:11:22:33'), {
+        online: true,
+        battery: 94,
+      })
+    );
+
+    // 6. Farm owner can write relay commands to MASTER/COMMANDS
+    await assertSucceeds(
+      setDoc(
+        doc(customerDb, 'farms', 'user_customer', 'DEVICES', 'AA:BB:CC:11:22:33', 'MASTER', 'COMMANDS'),
+        {
+          pump: true,
+          valve: false,
+        }
+      )
     );
   });
 });
