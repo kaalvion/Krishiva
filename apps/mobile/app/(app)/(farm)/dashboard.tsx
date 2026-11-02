@@ -37,6 +37,7 @@ import { ErrorView } from '../../../src/components/ErrorView';
 import { LoadingView } from '../../../src/components/LoadingView';
 import { EmptyState } from '../../../src/components/EmptyState';
 import { AlertBanner } from '../../../src/components/AlertBanner';
+import { ControllerOfflineBanner, SkeletonLoader } from '../../../src/components/states';
 import { colors } from '../../../src/theme/colors';
 import type { Device } from '../../../src/types';
 
@@ -187,6 +188,13 @@ export default function DashboardScreen() {
       {/* Offline Status & Active Alert Banners */}
       <ServerStatusBanner />
       <AlertBanner farmId={activeFarm.id} />
+
+      {totalCount > 0 && onlineCount === 0 && (
+        <ControllerOfflineBanner
+          nodeId={devices[0]?.id ? `NODE #${devices[0].id.slice(-8).toUpperCase()}` : 'NODE #LORA-841'}
+          onRetry={refreshDevices}
+        />
+      )}
 
       {isFromCache && (
         <View style={styles.cacheBanner}>

@@ -21,6 +21,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { TimePickerModal } from '../../../src/components/TimePickerModal';
+import { DeleteConfirmationModal } from '../../../src/components/states';
 import {
   ArrowLeft,
   Settings,
@@ -157,6 +158,7 @@ export default function ScheduleEditScreen() {
   });
   const [showPicker, setShowPicker] = useState<boolean>(false);
   const [deviceModalVisible, setDeviceModalVisible] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
 
   const {
     control,
@@ -314,26 +316,19 @@ export default function ScheduleEditScreen() {
       return;
     }
     if (!existingSchedule) return;
-    Alert.alert(
-      'Delete Schedule',
-      'Are you sure you want to delete this schedule? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteScheduleMutation.mutateAsync(existingSchedule.id);
-              router.back();
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : 'Failed to delete schedule';
-              Alert.alert('Error', msg);
-            }
-          },
-        },
-      ]
-    );
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!existingSchedule) return;
+    setShowDeleteModal(false);
+    try {
+      await deleteScheduleMutation.mutateAsync(existingSchedule.id);
+      router.back();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete schedule';
+      Alert.alert('Error', msg);
+    }
   };
 
   // Submit schedule
@@ -884,6 +879,17 @@ export default function ScheduleEditScreen() {
           </View>
         </View>
       </Modal>
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        visible={showDeleteModal}
+        title="Delete This Schedule?"
+        description="This action immediately purges local memory & LoRa transmission schedules. Irreversible."
+        itemTitle={existingSchedule?.name || selectedAction.replace('_', ' ')}
+        itemSubtitle={`${selectedTime} • ${daysMode === 'daily' ? 'Daily' : `${selectedDays.length} Days`}`}
+        itemBadge={selectedDuration ? `${Math.round(selectedDuration / 60)} MIN` : undefined}
+        onCancel={() => setShowDeleteModal(false)}
+        onConfirm={handleConfirmDelete}
+      />
     </SafeAreaView>
   );
 }

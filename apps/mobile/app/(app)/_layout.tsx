@@ -78,6 +78,12 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
+        name="design-system"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="(farm)"
         options={{
           headerShown: false,

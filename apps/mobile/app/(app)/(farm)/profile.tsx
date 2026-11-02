@@ -591,6 +591,15 @@ export default function ProfileScreen() {
             <Text style={styles.logoutText}>Log Out</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.designSystemBtn}
+            onPress={() => router.push('/(app)/design-system' as any)}
+            activeOpacity={0.7}
+          >
+            <Layers size={15} color="#516600" />
+            <Text style={styles.designSystemBtnText}>Developer: View Design System (Spec v2.4)</Text>
+          </TouchableOpacity>
+
           <View style={styles.versionCol}>
             <Text style={styles.versionText}>Krishiva App v2.4.1 (Build 108)</Text>
             <Text style={styles.taglineText}>
@@ -1166,6 +1175,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Manrope_600SemiBold',
     color: '#ba1a1a',
+  },
+  designSystemBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#edeeec',
+  },
+  designSystemBtnText: {
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
+    color: '#516600',
   },
   versionCol: {
     alignItems: 'center',

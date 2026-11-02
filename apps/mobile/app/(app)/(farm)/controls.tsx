@@ -49,6 +49,7 @@ import { useServerStatus } from '../../../src/context/ServerStatusContext';
 import { useLiveDevices, useRecentCommands } from '../../../src/hooks/live';
 import { useIssueCommand } from '../../../src/hooks/useCommand';
 import { sendHardwareMessage } from '../../../src/services/api';
+import { HoldToActivateSiren } from '../../../src/components/states';
 import type { Device, ActuatorAction, CommandRecord } from '../../../src/types';
 
 // Map Banner Image
@@ -652,51 +653,12 @@ export default function ControlsScreen() {
           </View>
 
           {/* ACTUATOR 4: Pest Deterrent Siren (Hold to Activate) */}
-          <View style={[styles.actuatorCard, styles.cardSiren]}>
-            <View style={styles.cardHeader}>
-              <View style={styles.sirenIconCircle}>
-                <AlertTriangle size={22} color="#ba1a1a" />
-              </View>
-              <View style={styles.sirenReadyBadge}>
-                <Lock size={12} color="#ba1a1a" />
-                <Text style={styles.sirenReadyText}>READY</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardBody}>
-              <Text style={styles.sirenTitle}>Pest Deterrent Siren</Text>
-              <View style={styles.runningRow}>
-                <Volume2 size={13} color="#ba1a1a" />
-                <Text style={styles.sirenSubtitle}>110 dB Frequency Blast</Text>
-              </View>
-            </View>
-
-            {/* Tactile Hold-To-Activate Button */}
-            <Pressable
-              style={styles.sirenHoldButton}
-              onPressIn={handleSirenPressIn}
-              onPressOut={handleSirenPressOut}
-              accessibilityLabel="Hold to activate pest siren"
-            >
-              <Animated.View
-                style={[
-                  styles.sirenProgressBar,
-                  {
-                    width: holdAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  },
-                ]}
-              />
-              <View style={styles.sirenButtonContent}>
-                <Volume2 size={16} color="#ba1a1a" />
-                <Text style={styles.sirenButtonText}>
-                  {sirenFired ? 'SIREN FIRED!' : sirenHolding ? 'HOLD (2s)...' : 'HOLD TO ACTIVATE'}
-                </Text>
-              </View>
-            </Pressable>
-          </View>
+          <HoldToActivateSiren
+            title="Pest Deterrent Siren"
+            subtitle="110 dB Frequency Blast • Engages acoustic ward across farm sector. Press and hold to prevent accidental triggers."
+            onTrigger={handleSirenTriggered}
+            onCancel={() => setSirenHolding(false)}
+          />
         </View>
 
         {/* 4. MASTER EMERGENCY STOP */}
