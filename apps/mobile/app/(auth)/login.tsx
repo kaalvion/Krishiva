@@ -13,7 +13,7 @@ import { Link, useRouter } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Sprout, LogIn, AlertCircle, ArrowLeft } from 'lucide-react-native';
+import { Sprout, LogIn, AlertCircle, ArrowLeft, Phone } from 'lucide-react-native';
 import { useAuth } from '../../src/hooks/useAuth';
 import { Button } from '../../src/components/Button';
 import { Input } from '../../src/components/Input';
@@ -142,6 +142,21 @@ export default function LoginScreen() {
               icon={<LogIn size={18} color={colors.textInverse} />}
               style={styles.submitButton}
             />
+
+            <View style={styles.orDividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.orDividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.phoneLoginButton}
+              onPress={() => router.push('/(auth)/phone-entry')}
+              activeOpacity={0.8}
+            >
+              <Phone size={18} color="#516600" />
+              <Text style={styles.phoneLoginText}>Sign in with Phone Number</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Footer link to Register */}
@@ -240,6 +255,39 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginTop: 8,
+  },
+  orDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e2e3e1',
+  },
+  orDividerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#757965',
+    letterSpacing: 0.5,
+  },
+  phoneLoginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(198, 232, 90, 0.25)',
+    borderWidth: 1.5,
+    borderColor: '#c6e85a',
+    gap: 8,
+  },
+  phoneLoginText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#516600',
   },
   footer: {
     flexDirection: 'row',
