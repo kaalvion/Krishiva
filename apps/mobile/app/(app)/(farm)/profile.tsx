@@ -21,7 +21,6 @@ import {
   Battery,
   Clock,
   Bell,
-  Volume2,
   Sprout,
   Cpu,
   Globe,
@@ -50,9 +49,6 @@ export default function ProfileScreen() {
   const { devices } = useLiveDevices(activeFarm?.id);
 
   // Alert preferences toggle state
-  const [pushNotif, setPushNotif] = useState(true);
-  const [alertSound, setAlertSound] = useState(true);
-
   const farmerName =
     user?.displayName ||
     (user?.email ? user.email.split('@')[0] : 'Rameshwar Patil');
@@ -339,70 +335,30 @@ export default function ProfileScreen() {
         {/* Alert Preferences Section */}
         <View style={styles.sectionGroup}>
           <Text style={styles.sectionTitle}>ALERT PREFERENCES</Text>
-          <View style={styles.card}>
-            {/* Toggle Row 1: Push Notifications */}
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleLeft}>
-                <View style={styles.toggleIconCircle}>
+          <View style={styles.configCard}>
+            <TouchableOpacity
+              style={styles.configRow}
+              onPress={() => router.push('/(app)/(farm)/notification-settings')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.configLeft}>
+                <View style={styles.configIconCircle}>
                   <Bell size={18} color="#516600" />
                 </View>
-                <View style={styles.toggleTextCol}>
-                  <Text style={styles.toggleTitle}>Push Notifications</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Real-time alerts for pump, leaks & valves
+                <View style={styles.configTextCol}>
+                  <Text style={styles.configTitle}>Notification Settings</Text>
+                  <Text style={styles.configSubtitle}>
+                    Push, WhatsApp, triggers & quiet hours
                   </Text>
                 </View>
               </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.switchTrack,
-                  pushNotif ? styles.switchTrackOn : styles.switchTrackOff,
-                ]}
-                onPress={() => setPushNotif((prev) => !prev)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.switchThumb,
-                    pushNotif ? styles.switchThumbOn : styles.switchThumbOff,
-                  ]}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.divider} />
-
-            {/* Toggle Row 2: Alert Sound */}
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleLeft}>
-                <View style={styles.toggleIconCircle}>
-                  <Volume2 size={18} color="#516600" />
+              <View style={styles.configRightBadgeRow}>
+                <View style={styles.configPill}>
+                  <Text style={styles.configPillText}>Live</Text>
                 </View>
-                <View style={styles.toggleTextCol}>
-                  <Text style={styles.toggleTitle}>Alert Sound</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Loud audible chime for critical pump faults
-                  </Text>
-                </View>
+                <ChevronRight size={18} color="#757965" />
               </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.switchTrack,
-                  alertSound ? styles.switchTrackOn : styles.switchTrackOff,
-                ]}
-                onPress={() => setAlertSound((prev) => !prev)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.switchThumb,
-                    alertSound ? styles.switchThumbOn : styles.switchThumbOff,
-                  ]}
-                />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
